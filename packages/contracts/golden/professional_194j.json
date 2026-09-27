@@ -1,0 +1,44 @@
+{
+  "document_id": "doc-prof-194j",
+  "document_type": "purchase_invoice",
+  "vendor": {
+    "name": "Expert Consultants LLP",
+    "gstin": "27HJKL0123M1Z4",
+    "pan": "HJKL0123M",
+    "state": "Maharashtra"
+  },
+  "buyer_gstin": "29XYZAB9876C1Z2",
+  "invoice_no": "EC/26/08",
+  "invoice_date": "2026-09-03",
+  "due_date": "2026-09-18",
+  "irn": null,
+  "po_number": null,
+  "grn_number": null,
+  "taxable": 200000.0,
+  "cgst": 0.0,
+  "sgst": 0.0,
+  "igst": 36000.0,
+  "cess": 0.0,
+  "round_off": 0.0,
+  "total": 236000.0,
+  "line_items": [
+    {
+      "desc": "Legal advisory fees",
+      "hsn_sac": "9982",
+      "qty": 1.0,
+      "rate": 200000.0,
+      "taxable": 200000.0,
+      "tax_rate": 18.0,
+      "tax_amount": 36000.0
+    }
+  ],
+  "bank_upi": null,
+  "confidences": {
+    "invoice_no": 0.99,
+    "date": 0.99,
+    "gstin": 0.99,
+    "total": 1.0
+  },
+  "raw_markdown_path": "client1/2026/09/doc-prof-194j/doc.md",
+  "page_image_paths": []
+}

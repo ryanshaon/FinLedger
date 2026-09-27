@@ -1,0 +1,61 @@
+{
+  "$defs": {
+    "RiskMark": {
+      "properties": {
+        "field": {
+          "title": "Field",
+          "type": "string"
+        },
+        "check": {
+          "title": "Check",
+          "type": "string"
+        },
+        "ok": {
+          "title": "Ok",
+          "type": "boolean"
+        },
+        "note": {
+          "title": "Note",
+          "type": "string"
+        }
+      },
+      "required": [
+        "field",
+        "check",
+        "ok",
+        "note"
+      ],
+      "title": "RiskMark",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "document_id": {
+      "title": "Document Id",
+      "type": "string"
+    },
+    "score": {
+      "default": 0,
+      "title": "Score",
+      "type": "integer"
+    },
+    "band": {
+      "default": "low",
+      "title": "Band",
+      "type": "string"
+    },
+    "marks": {
+      "items": {
+        "$ref": "#/$defs/RiskMark"
+      },
+      "title": "Marks",
+      "type": "array"
+    }
+  },
+  "required": [
+    "document_id",
+    "marks"
+  ],
+  "title": "RiskScore",
+  "type": "object"
+}

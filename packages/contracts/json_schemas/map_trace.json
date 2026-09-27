@@ -1,0 +1,51 @@
+{
+  "properties": {
+    "map_trace_id": {
+      "title": "Map Trace Id",
+      "type": "string"
+    },
+    "document_id": {
+      "title": "Document Id",
+      "type": "string"
+    },
+    "client_id": {
+      "title": "Client Id",
+      "type": "string"
+    },
+    "retrieved_chunk_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Retrieved Chunk Ids",
+      "type": "array"
+    },
+    "model_name": {
+      "title": "Model Name",
+      "type": "string"
+    },
+    "tokens_in": {
+      "title": "Tokens In",
+      "type": "integer"
+    },
+    "tokens_out": {
+      "title": "Tokens Out",
+      "type": "integer"
+    },
+    "cost_usd": {
+      "title": "Cost Usd",
+      "type": "number"
+    }
+  },
+  "required": [
+    "map_trace_id",
+    "document_id",
+    "client_id",
+    "retrieved_chunk_ids",
+    "model_name",
+    "tokens_in",
+    "tokens_out",
+    "cost_usd"
+  ],
+  "title": "MapTrace",
+  "type": "object"
+}

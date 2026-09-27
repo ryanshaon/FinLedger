@@ -1,0 +1,250 @@
+{
+  "$defs": {
+    "Confidences": {
+      "properties": {
+        "invoice_no": {
+          "default": 0.0,
+          "title": "Invoice No",
+          "type": "number"
+        },
+        "date": {
+          "default": 0.0,
+          "title": "Date",
+          "type": "number"
+        },
+        "gstin": {
+          "default": 0.0,
+          "title": "Gstin",
+          "type": "number"
+        },
+        "total": {
+          "default": 0.0,
+          "title": "Total",
+          "type": "number"
+        }
+      },
+      "title": "Confidences",
+      "type": "object"
+    },
+    "LineItem": {
+      "properties": {
+        "desc": {
+          "default": "",
+          "title": "Desc",
+          "type": "string"
+        },
+        "hsn_sac": {
+          "default": "",
+          "title": "Hsn Sac",
+          "type": "string"
+        },
+        "qty": {
+          "default": 0.0,
+          "title": "Qty",
+          "type": "number"
+        },
+        "rate": {
+          "default": 0.0,
+          "title": "Rate",
+          "type": "number"
+        },
+        "taxable": {
+          "default": 0.0,
+          "title": "Taxable",
+          "type": "number"
+        },
+        "tax_rate": {
+          "default": 0.0,
+          "title": "Tax Rate",
+          "type": "number"
+        },
+        "tax_amount": {
+          "default": 0.0,
+          "title": "Tax Amount",
+          "type": "number"
+        }
+      },
+      "title": "LineItem",
+      "type": "object"
+    },
+    "Vendor": {
+      "properties": {
+        "name": {
+          "default": "",
+          "title": "Name",
+          "type": "string"
+        },
+        "gstin": {
+          "default": "",
+          "title": "Gstin",
+          "type": "string"
+        },
+        "pan": {
+          "default": "",
+          "title": "Pan",
+          "type": "string"
+        },
+        "state": {
+          "default": "",
+          "title": "State",
+          "type": "string"
+        }
+      },
+      "title": "Vendor",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "document_id": {
+      "title": "Document Id",
+      "type": "string"
+    },
+    "document_type": {
+      "description": "purchase_invoice | debit_note | credit_note | expense | unknown",
+      "title": "Document Type",
+      "type": "string"
+    },
+    "vendor": {
+      "$ref": "#/$defs/Vendor"
+    },
+    "buyer_gstin": {
+      "default": "",
+      "title": "Buyer Gstin",
+      "type": "string"
+    },
+    "invoice_no": {
+      "default": "",
+      "title": "Invoice No",
+      "type": "string"
+    },
+    "invoice_date": {
+      "default": "",
+      "title": "Invoice Date",
+      "type": "string"
+    },
+    "due_date": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Due Date"
+    },
+    "irn": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Irn"
+    },
+    "po_number": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Po Number"
+    },
+    "grn_number": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Grn Number"
+    },
+    "taxable": {
+      "default": 0.0,
+      "title": "Taxable",
+      "type": "number"
+    },
+    "cgst": {
+      "default": 0.0,
+      "title": "Cgst",
+      "type": "number"
+    },
+    "sgst": {
+      "default": 0.0,
+      "title": "Sgst",
+      "type": "number"
+    },
+    "igst": {
+      "default": 0.0,
+      "title": "Igst",
+      "type": "number"
+    },
+    "cess": {
+      "default": 0.0,
+      "title": "Cess",
+      "type": "number"
+    },
+    "round_off": {
+      "default": 0.0,
+      "title": "Round Off",
+      "type": "number"
+    },
+    "total": {
+      "default": 0.0,
+      "title": "Total",
+      "type": "number"
+    },
+    "line_items": {
+      "items": {
+        "$ref": "#/$defs/LineItem"
+      },
+      "title": "Line Items",
+      "type": "array"
+    },
+    "bank_upi": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Bank Upi"
+    },
+    "confidences": {
+      "$ref": "#/$defs/Confidences"
+    },
+    "raw_markdown_path": {
+      "default": "",
+      "title": "Raw Markdown Path",
+      "type": "string"
+    },
+    "page_image_paths": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Page Image Paths",
+      "type": "array"
+    }
+  },
+  "required": [
+    "document_id",
+    "document_type",
+    "vendor"
+  ],
+  "title": "CanonicalInvoice",
+  "type": "object"
+}

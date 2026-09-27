@@ -1,0 +1,30 @@
+{
+  "document_id": "doc-missing",
+  "document_type": "purchase_invoice",
+  "vendor": {
+    "name": "Unknown",
+    "gstin": "33AAAAA0000A1Z5",
+    "pan": "AAAAA0000A",
+    "state": ""
+  },
+  "invoice_date": "2026-09-04",
+  "taxable": 1000.0,
+  "total": 1000.0,
+  "line_items": [
+    {
+      "desc": "Service",
+      "hsn_sac": "",
+      "qty": 0.0,
+      "rate": 0.0,
+      "taxable": 1000.0,
+      "tax_rate": 0.0,
+      "tax_amount": 0.0
+    }
+  ],
+  "confidences": {
+    "invoice_no": 0.0,
+    "date": 0.9,
+    "gstin": 0.9,
+    "total": 0.9
+  }
+}

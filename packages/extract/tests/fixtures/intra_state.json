@@ -1,0 +1,33 @@
+{
+  "document_id": "doc-intra",
+  "document_type": "purchase_invoice",
+  "vendor": {
+    "name": "Local Tech",
+    "gstin": "29ABCDE1234F1Z5",
+    "pan": "ABCDE1234F",
+    "state": ""
+  },
+  "invoice_no": "INV-01",
+  "invoice_date": "2026-09-01",
+  "taxable": 50000.0,
+  "cgst": 4500.0,
+  "sgst": 4500.0,
+  "total": 59000.0,
+  "line_items": [
+    {
+      "desc": "Laptop",
+      "hsn_sac": "8471",
+      "qty": 1.0,
+      "rate": 50000.0,
+      "taxable": 50000.0,
+      "tax_rate": 18.0,
+      "tax_amount": 9000.0
+    }
+  ],
+  "confidences": {
+    "invoice_no": 0.9,
+    "date": 0.9,
+    "gstin": 0.9,
+    "total": 0.9
+  }
+}

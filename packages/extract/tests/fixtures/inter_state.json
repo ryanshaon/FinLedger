@@ -1,0 +1,32 @@
+{
+  "document_id": "doc-inter",
+  "document_type": "purchase_invoice",
+  "vendor": {
+    "name": "Delhi Goods",
+    "gstin": "07DEFGH5678I1Z3",
+    "pan": "DEFGH5678I",
+    "state": ""
+  },
+  "invoice_no": "IGST-02",
+  "invoice_date": "2026-09-02",
+  "taxable": 20000.0,
+  "igst": 3600.0,
+  "total": 23600.0,
+  "line_items": [
+    {
+      "desc": "Monitor",
+      "hsn_sac": "8528",
+      "qty": 2.0,
+      "rate": 10000.0,
+      "taxable": 20000.0,
+      "tax_rate": 18.0,
+      "tax_amount": 3600.0
+    }
+  ],
+  "confidences": {
+    "invoice_no": 0.9,
+    "date": 0.9,
+    "gstin": 0.9,
+    "total": 0.9
+  }
+}

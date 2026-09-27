@@ -1,0 +1,48 @@
+{
+  "properties": {
+    "document_id": {
+      "title": "Document Id",
+      "type": "string"
+    },
+    "vendor_gstin": {
+      "title": "Vendor Gstin",
+      "type": "string"
+    },
+    "hsn_sac": {
+      "title": "Hsn Sac",
+      "type": "string"
+    },
+    "description": {
+      "title": "Description",
+      "type": "string"
+    },
+    "old_ledger": {
+      "title": "Old Ledger",
+      "type": "string"
+    },
+    "new_ledger": {
+      "title": "New Ledger",
+      "type": "string"
+    },
+    "old_tax": {
+      "title": "Old Tax",
+      "type": "string"
+    },
+    "new_tax": {
+      "title": "New Tax",
+      "type": "string"
+    }
+  },
+  "required": [
+    "document_id",
+    "vendor_gstin",
+    "hsn_sac",
+    "description",
+    "old_ledger",
+    "new_ledger",
+    "old_tax",
+    "new_tax"
+  ],
+  "title": "CorrectionEvent",
+  "type": "object"
+}

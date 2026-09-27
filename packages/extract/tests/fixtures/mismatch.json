@@ -1,0 +1,40 @@
+{
+  "document_id": "doc-mismatch",
+  "document_type": "purchase_invoice",
+  "vendor": {
+    "name": "Mismatch Co",
+    "gstin": "29MMMMM1111M1Z1",
+    "pan": "MMMMM1111M",
+    "state": ""
+  },
+  "invoice_no": "MIS-05",
+  "invoice_date": "2026-09-05",
+  "taxable": 8000.0,
+  "total": 9440.0,
+  "line_items": [
+    {
+      "desc": "Item A",
+      "hsn_sac": "1111",
+      "qty": 0.0,
+      "rate": 0.0,
+      "taxable": 3000.0,
+      "tax_rate": 0.0,
+      "tax_amount": 0.0
+    },
+    {
+      "desc": "Item B",
+      "hsn_sac": "2222",
+      "qty": 0.0,
+      "rate": 0.0,
+      "taxable": 4000.0,
+      "tax_rate": 0.0,
+      "tax_amount": 0.0
+    }
+  ],
+  "confidences": {
+    "invoice_no": 0.9,
+    "date": 0.9,
+    "gstin": 0.9,
+    "total": 0.9
+  }
+}

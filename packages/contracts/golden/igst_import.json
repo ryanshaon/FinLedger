@@ -1,0 +1,44 @@
+{
+  "document_id": "doc-igst",
+  "document_type": "purchase_invoice",
+  "vendor": {
+    "name": "Delhi Electronics",
+    "gstin": "07DEFGH5678I1Z3",
+    "pan": "DEFGH5678I",
+    "state": "Delhi"
+  },
+  "buyer_gstin": "29XYZAB9876C1Z2",
+  "invoice_no": "DE-2026-99",
+  "invoice_date": "2026-09-02",
+  "due_date": null,
+  "irn": null,
+  "po_number": null,
+  "grn_number": null,
+  "taxable": 50000.0,
+  "cgst": 0.0,
+  "sgst": 0.0,
+  "igst": 9000.0,
+  "cess": 0.0,
+  "round_off": 0.0,
+  "total": 59000.0,
+  "line_items": [
+    {
+      "desc": "Monitors",
+      "hsn_sac": "8528",
+      "qty": 5.0,
+      "rate": 10000.0,
+      "taxable": 50000.0,
+      "tax_rate": 18.0,
+      "tax_amount": 9000.0
+    }
+  ],
+  "bank_upi": null,
+  "confidences": {
+    "invoice_no": 0.95,
+    "date": 0.96,
+    "gstin": 0.99,
+    "total": 1.0
+  },
+  "raw_markdown_path": "client1/2026/09/doc-igst/doc.md",
+  "page_image_paths": []
+}

@@ -1,0 +1,44 @@
+{
+  "document_id": "doc-intra-18",
+  "document_type": "purchase_invoice",
+  "vendor": {
+    "name": "Local Tech Solutions",
+    "gstin": "29ABCDE1234F1Z5",
+    "pan": "ABCDE1234F",
+    "state": "Karnataka"
+  },
+  "buyer_gstin": "29XYZAB9876C1Z2",
+  "invoice_no": "INV-1001",
+  "invoice_date": "2026-09-01",
+  "due_date": "2026-10-01",
+  "irn": "abcd1234efgh5678",
+  "po_number": "PO-9988",
+  "grn_number": null,
+  "taxable": 10000.0,
+  "cgst": 900.0,
+  "sgst": 900.0,
+  "igst": 0.0,
+  "cess": 0.0,
+  "round_off": 0.0,
+  "total": 11800.0,
+  "line_items": [
+    {
+      "desc": "Laptop repair services",
+      "hsn_sac": "9987",
+      "qty": 1.0,
+      "rate": 10000.0,
+      "taxable": 10000.0,
+      "tax_rate": 18.0,
+      "tax_amount": 1800.0
+    }
+  ],
+  "bank_upi": "localtech@upi",
+  "confidences": {
+    "invoice_no": 0.99,
+    "date": 0.98,
+    "gstin": 0.99,
+    "total": 1.0
+  },
+  "raw_markdown_path": "client1/2026/09/doc-intra-18/doc.md",
+  "page_image_paths": []
+}
