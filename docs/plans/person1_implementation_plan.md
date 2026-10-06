@@ -2,7 +2,7 @@
 
 > Owner: Person 1 (AI / RAG / Tokens)
 > Created: 2026-09-28
-> Status: DRAFT — awaiting APPROVE
+> Status: IMPLEMENTED AS LOCAL PROTOTYPE — live providers and persistent RAG deferred
 
 ---
 

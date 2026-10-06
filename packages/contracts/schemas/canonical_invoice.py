@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List, Optional, Literal
 from pydantic import BaseModel, Field
 
 class Vendor(BaseModel):
@@ -17,14 +17,14 @@ class LineItem(BaseModel):
     tax_amount: float = 0.0
 
 class Confidences(BaseModel):
-    invoice_no: float = 0.0
-    date: float = 0.0
-    gstin: float = 0.0
-    total: float = 0.0
+    invoice_no: float = Field(default=0.0, ge=0, le=1)
+    date: float = Field(default=0.0, ge=0, le=1)
+    gstin: float = Field(default=0.0, ge=0, le=1)
+    total: float = Field(default=0.0, ge=0, le=1)
 
 class CanonicalInvoice(BaseModel):
     document_id: str
-    document_type: str = Field(description="purchase_invoice | debit_note | credit_note | expense | unknown")
+    document_type: Literal["purchase_invoice", "debit_note", "credit_note", "expense", "unknown"]
     vendor: Vendor
     buyer_gstin: str = ""
     invoice_no: str = ""

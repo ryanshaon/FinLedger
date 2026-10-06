@@ -1,16 +1,17 @@
 # Person 4 — live context
 
-Seat: Tally connector. Last updated: 2026-09-28
+Seat: Tally connector. Last updated: 2026-10-06
 
 ## Owns
 Local agent `:9000`, fetch_masters, mapping table, idempotent post, attach PDF, outstanding pull.
 
 ## Current status
-Tally first. Zoho / QBO / SAP parked until Tally loop is boring.
+**Architecture only.** No local agent, adapter, installer, posting service, or
+connector tests exist yet. Tally remains first; Zoho, QBO and SAP are parked.
 
 ## Facts
 - Adapter contract: connect, fetch_masters, post_invoice, post_credit_debit, fetch_open_bills, post_payment?, health
-- Idempotency key = document_id
+- Business idempotency key = `document_id`; attempt identity = `(document_id, revision)`
 - New vendor = proposal only
 
 ## Open questions

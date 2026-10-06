@@ -7,6 +7,11 @@
           "type": "string"
         },
         "check": {
+          "enum": [
+            "suspicious_language",
+            "payment_instruction_anomaly",
+            "identity_impersonation"
+          ],
           "title": "Check",
           "type": "string"
         },
@@ -36,11 +41,18 @@
     },
     "score": {
       "default": 0,
+      "maximum": 100,
+      "minimum": 0,
       "title": "Score",
       "type": "integer"
     },
     "band": {
       "default": "low",
+      "enum": [
+        "low",
+        "medium",
+        "high"
+      ],
       "title": "Band",
       "type": "string"
     },
@@ -53,8 +65,7 @@
     }
   },
   "required": [
-    "document_id",
-    "marks"
+    "document_id"
   ],
   "title": "RiskScore",
   "type": "object"

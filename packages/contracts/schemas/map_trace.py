@@ -1,5 +1,6 @@
 from typing import List
 from pydantic import BaseModel
+from contracts.schemas.voucher_draft import VoucherDraft
 
 class MapTrace(BaseModel):
     map_trace_id: str
@@ -10,3 +11,8 @@ class MapTrace(BaseModel):
     tokens_in: int
     tokens_out: int
     cost_usd: float
+
+
+class MapResult(BaseModel):
+    draft: VoucherDraft
+    trace: MapTrace

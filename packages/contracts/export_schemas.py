@@ -5,7 +5,8 @@ from schemas import (
     RiskScore,
     VoucherDraft,
     CorrectionEvent,
-    MapTrace
+    MapTrace,
+    MapResult,
 )
 
 def export():
@@ -17,7 +18,8 @@ def export():
         "risk_score.json": RiskScore,
         "voucher_draft.json": VoucherDraft,
         "correction_event.json": CorrectionEvent,
-        "map_trace.json": MapTrace
+        "map_trace.json": MapTrace,
+        "map_result.json": MapResult,
     }
     
     for filename, model in models.items():

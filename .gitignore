@@ -1,0 +1,34 @@
+# Secrets and local runtime configuration
+.env
+.env.local
+.env.*.local
+
+# Python and test output
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.uv-cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+dist/
+build/
+.ruff_cache/
+.mypy_cache/
+.pyright/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+.pytest-*/
+
+# Runtime data
+var/
+*.log
+
+# Untrusted/import staging; reviewed files are merged explicitly
+_incoming/
+

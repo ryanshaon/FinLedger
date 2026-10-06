@@ -7,18 +7,20 @@ from usage.model_router import ModelRouter
 from usage.usage_writer import UsageWriter
 
 class ExtractWorker:
-    def __init__(self, usage_writer: UsageWriter):
+    def __init__(self, usage_writer: UsageWriter, router: ModelRouter | None = None):
         self.usage_writer = usage_writer
-        self.router = ModelRouter()
+        self.router = router or ModelRouter()
         self.prompt_path = os.path.join(os.path.dirname(__file__), "prompts", "extract_digital.txt")
 
     def _call_llm(self, model: str, prompt: str, markdown: str) -> str:
-        # In a real environment, call the LLM API here.
-        # For tests, this will be mocked.
-        return "{}"
+        response = self.router.provider.complete("extract", model, self._client_id, self._document_id, {"prompt": prompt, "markdown": markdown})
+        self._provider_response = response
+        return response.text
 
     def extract(self, client_id: str, document_id: str, markdown: str) -> CanonicalInvoice:
         model = self.router.resolve_model("extract")
+        self._document_id = document_id
+        self._client_id = client_id
         
         with open(self.prompt_path, "r") as f:
             prompt_template = f.read()
@@ -31,10 +33,10 @@ class ExtractWorker:
             client_id=client_id,
             doc_id=document_id,
             model=model,
-            tokens_in=len(markdown) // 4,
-            tokens_out=len(response_text) // 4,
-            latency_ms=1000,
-            cost_usd=0.0,
+            tokens_in=getattr(getattr(self, "_provider_response", None), "tokens_in", max(1, len(markdown) // 4)),
+            tokens_out=getattr(getattr(self, "_provider_response", None), "tokens_out", max(1, len(response_text) // 4)),
+            latency_ms=getattr(getattr(self, "_provider_response", None), "latency_ms", 1000),
+            cost_usd=getattr(getattr(self, "_provider_response", None), "cost_usd", 0.0),
             purpose="extract"
         )
         

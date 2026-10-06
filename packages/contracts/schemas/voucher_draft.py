@@ -1,5 +1,5 @@
-from typing import List, Optional, Dict
-from pydantic import BaseModel, Field
+from typing import List, Optional, Dict, Literal
+from pydantic import BaseModel, Field, model_validator
 
 class VoucherLine(BaseModel):
     ledger: str
@@ -8,7 +8,7 @@ class VoucherLine(BaseModel):
     cost_centre: Optional[str] = None
 
 class GstDetails(BaseModel):
-    treatment: str = Field(description="intra | inter | exempt")
+    treatment: Literal["intra", "inter", "exempt"] = "exempt"
     input_ledgers: List[str] = Field(default_factory=list)
     tax_breakup: Dict[str, float] = Field(default_factory=dict)
 
@@ -19,14 +19,14 @@ class TdsDetails(BaseModel):
     amount: float = 0.0
 
 class BillWise(BaseModel):
-    ref_type: str = "new_ref"
+    ref_type: Literal["new_ref", "against_ref", "advance", "on_account"] = "new_ref"
     ref: str
-    due_date: str
+    due_date: Optional[str] = None
 
 class VoucherDraft(BaseModel):
     document_id: str
     date: str
-    voucher_type: str = Field(description="purchase | debit_note | credit_note | payment")
+    voucher_type: Literal["purchase", "debit_note", "credit_note", "payment"]
     party_ledger: str
     party_create_proposal: bool = False
     lines: List[VoucherLine] = Field(default_factory=list)
@@ -37,3 +37,9 @@ class VoucherDraft(BaseModel):
     attachment_document_id: str
     reasons: List[str] = Field(default_factory=list)
     map_trace_id: str
+
+    @model_validator(mode="after")
+    def document_ids_match(self):
+        if self.attachment_document_id != self.document_id:
+            raise ValueError("attachment_document_id must match document_id")
+        return self

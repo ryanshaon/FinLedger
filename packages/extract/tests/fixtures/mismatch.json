@@ -35,6 +35,6 @@
     "invoice_no": 0.9,
     "date": 0.9,
     "gstin": 0.9,
-    "total": 0.9
+    "total": 0.5
   }
 }

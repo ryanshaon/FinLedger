@@ -23,9 +23,10 @@ class Indexer:
         for i, existing in enumerate(self.store[namespace]):
             if existing["chunk_id"] == chunk_id:
                 self.store[namespace][i] = chunk
-                return
+                return chunk
         
         self.store[namespace].append(chunk)
+        return chunk
 
     def get_namespace_chunks(self, client_id: str):
         namespace = build_client_namespace(client_id)

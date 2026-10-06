@@ -1,0 +1,288 @@
+{
+  "$defs": {
+    "BillWise": {
+      "properties": {
+        "ref_type": {
+          "default": "new_ref",
+          "enum": [
+            "new_ref",
+            "against_ref",
+            "advance",
+            "on_account"
+          ],
+          "title": "Ref Type",
+          "type": "string"
+        },
+        "ref": {
+          "title": "Ref",
+          "type": "string"
+        },
+        "due_date": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Due Date"
+        }
+      },
+      "required": [
+        "ref"
+      ],
+      "title": "BillWise",
+      "type": "object"
+    },
+    "GstDetails": {
+      "properties": {
+        "treatment": {
+          "default": "exempt",
+          "enum": [
+            "intra",
+            "inter",
+            "exempt"
+          ],
+          "title": "Treatment",
+          "type": "string"
+        },
+        "input_ledgers": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Input Ledgers",
+          "type": "array"
+        },
+        "tax_breakup": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "title": "Tax Breakup",
+          "type": "object"
+        }
+      },
+      "title": "GstDetails",
+      "type": "object"
+    },
+    "MapTrace": {
+      "properties": {
+        "map_trace_id": {
+          "title": "Map Trace Id",
+          "type": "string"
+        },
+        "document_id": {
+          "title": "Document Id",
+          "type": "string"
+        },
+        "client_id": {
+          "title": "Client Id",
+          "type": "string"
+        },
+        "retrieved_chunk_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Retrieved Chunk Ids",
+          "type": "array"
+        },
+        "model_name": {
+          "title": "Model Name",
+          "type": "string"
+        },
+        "tokens_in": {
+          "title": "Tokens In",
+          "type": "integer"
+        },
+        "tokens_out": {
+          "title": "Tokens Out",
+          "type": "integer"
+        },
+        "cost_usd": {
+          "title": "Cost Usd",
+          "type": "number"
+        }
+      },
+      "required": [
+        "map_trace_id",
+        "document_id",
+        "client_id",
+        "retrieved_chunk_ids",
+        "model_name",
+        "tokens_in",
+        "tokens_out",
+        "cost_usd"
+      ],
+      "title": "MapTrace",
+      "type": "object"
+    },
+    "TdsDetails": {
+      "properties": {
+        "applicable": {
+          "default": false,
+          "title": "Applicable",
+          "type": "boolean"
+        },
+        "section": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Section"
+        },
+        "ledger": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ledger"
+        },
+        "amount": {
+          "default": 0.0,
+          "title": "Amount",
+          "type": "number"
+        }
+      },
+      "title": "TdsDetails",
+      "type": "object"
+    },
+    "VoucherDraft": {
+      "properties": {
+        "document_id": {
+          "title": "Document Id",
+          "type": "string"
+        },
+        "date": {
+          "title": "Date",
+          "type": "string"
+        },
+        "voucher_type": {
+          "enum": [
+            "purchase",
+            "debit_note",
+            "credit_note",
+            "payment"
+          ],
+          "title": "Voucher Type",
+          "type": "string"
+        },
+        "party_ledger": {
+          "title": "Party Ledger",
+          "type": "string"
+        },
+        "party_create_proposal": {
+          "default": false,
+          "title": "Party Create Proposal",
+          "type": "boolean"
+        },
+        "lines": {
+          "items": {
+            "$ref": "#/$defs/VoucherLine"
+          },
+          "title": "Lines",
+          "type": "array"
+        },
+        "gst": {
+          "$ref": "#/$defs/GstDetails"
+        },
+        "tds": {
+          "$ref": "#/$defs/TdsDetails"
+        },
+        "bill_wise": {
+          "$ref": "#/$defs/BillWise"
+        },
+        "narration": {
+          "default": "",
+          "title": "Narration",
+          "type": "string"
+        },
+        "attachment_document_id": {
+          "title": "Attachment Document Id",
+          "type": "string"
+        },
+        "reasons": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Reasons",
+          "type": "array"
+        },
+        "map_trace_id": {
+          "title": "Map Trace Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "document_id",
+        "date",
+        "voucher_type",
+        "party_ledger",
+        "bill_wise",
+        "attachment_document_id",
+        "map_trace_id"
+      ],
+      "title": "VoucherDraft",
+      "type": "object"
+    },
+    "VoucherLine": {
+      "properties": {
+        "ledger": {
+          "title": "Ledger",
+          "type": "string"
+        },
+        "amount": {
+          "title": "Amount",
+          "type": "number"
+        },
+        "is_debit": {
+          "default": true,
+          "title": "Is Debit",
+          "type": "boolean"
+        },
+        "cost_centre": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cost Centre"
+        }
+      },
+      "required": [
+        "ledger",
+        "amount"
+      ],
+      "title": "VoucherLine",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "draft": {
+      "$ref": "#/$defs/VoucherDraft"
+    },
+    "trace": {
+      "$ref": "#/$defs/MapTrace"
+    }
+  },
+  "required": [
+    "draft",
+    "trace"
+  ],
+  "title": "MapResult",
+  "type": "object"
+}

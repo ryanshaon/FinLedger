@@ -11,4 +11,69 @@ Architecture baseline: 23 Sep 2026. Hard rule: extraction never posts.
 
 Shared objects: `shared/00_SHARED_CONTRACTS.md` and `shared/Shared_Contracts.pdf`.
 
-Give each person their folder. Week 0 they freeze the shared contracts together.
+The workspace contains the implemented work for Persons 1, 2, and 3. Person 4
+remains the connector boundary and is represented by its architecture pack.
+
+## Capability status
+
+| Seat | Status | Source | Validation |
+|---|---|---|
+| Person 1 | Prototype | `packages/`, `evals/` | 41 tests + deterministic fixture evaluation |
+| Person 2 | Implemented | `person2_platform/` | 60 tests; one optional-storage test may skip |
+| Person 3 | Implemented | `person3_control_ui/` | 38 tests |
+| Person 4 | Planned | `person4_tally/` | Architecture only; no runnable connector |
+
+`Implemented` means runnable and integration-tested. `Prototype` means runnable
+with deterministic/in-memory development adapters. `Planned` means no runtime
+implementation exists. The complete vendor-to-Tally loop is therefore not yet
+production-executable: Person 1 still needs live provider/persistent adapters,
+and Person 4 remains to be built.
+
+## Prerequisites and verification
+
+- Python 3.12 (the locked native dependencies do not support Python 3.14).
+- `uv` for Person 2/3 dependency environments.
+- PostgreSQL tools (`initdb`, `pg_ctl`, `psql`) on `PATH` for integration tests.
+- EICAR scanner mode for local tests; `clamd` is required in production.
+
+From this repository root, run the complete verification suite with:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/test.ps1
+```
+
+## Local mock environment
+
+The repository root contains `.env.example` with placeholders for PostgreSQL,
+Supabase, storage, email, Person 1 AI providers, and the Person 4 Tally agent.
+Create a local copy with `Copy-Item .env.example .env`. Never distribute `.env`.
+
+PowerShell does not automatically load `.env`. From this directory, load it into the current terminal before running either service:
+
+```powershell
+Get-Content .env | Where-Object { $_ -and -not $_.StartsWith('#') } | ForEach-Object {
+  $name, $value = $_ -split '=', 2
+  [Environment]::SetEnvironmentVariable($name, $value, 'Process')
+}
+```
+
+Mock keys are suitable only for wiring and tests. Replace every `mock_`, `sk-mock`, `sk-ant-mock`, and local database password before deployment.
+
+## Person 1 quick start
+
+```powershell
+$env:PYTHONPATH = "packages"
+python -m pytest packages evals -q --basetemp=.pytest-person1
+python evals/run_evals.py --provider-mode mock
+```
+
+Person 1 currently uses deterministic mock provider methods. The environment
+variables expose the future live-provider boundary without requiring real keys.
+
+## Runtime order
+
+```text
+PostgreSQL → migrations/bootstrap → Person 2 API and workers
+           → Person 1 mock pipeline → Person 3 review service
+           → Person 4 connector (not implemented)
+```

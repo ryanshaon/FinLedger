@@ -4,21 +4,29 @@
       "properties": {
         "invoice_no": {
           "default": 0.0,
+          "maximum": 1,
+          "minimum": 0,
           "title": "Invoice No",
           "type": "number"
         },
         "date": {
           "default": 0.0,
+          "maximum": 1,
+          "minimum": 0,
           "title": "Date",
           "type": "number"
         },
         "gstin": {
           "default": 0.0,
+          "maximum": 1,
+          "minimum": 0,
           "title": "Gstin",
           "type": "number"
         },
         "total": {
           "default": 0.0,
+          "maximum": 1,
+          "minimum": 0,
           "title": "Total",
           "type": "number"
         }
@@ -100,7 +108,13 @@
       "type": "string"
     },
     "document_type": {
-      "description": "purchase_invoice | debit_note | credit_note | expense | unknown",
+      "enum": [
+        "purchase_invoice",
+        "debit_note",
+        "credit_note",
+        "expense",
+        "unknown"
+      ],
       "title": "Document Type",
       "type": "string"
     },

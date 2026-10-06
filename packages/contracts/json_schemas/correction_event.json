@@ -1,5 +1,17 @@
 {
   "properties": {
+    "client_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Client Id"
+    },
     "document_id": {
       "title": "Document Id",
       "type": "string"
@@ -8,40 +20,69 @@
       "title": "Vendor Gstin",
       "type": "string"
     },
+    "field": {
+      "default": "ledger",
+      "title": "Field",
+      "type": "string"
+    },
     "hsn_sac": {
+      "default": "",
       "title": "Hsn Sac",
       "type": "string"
     },
     "description": {
+      "default": "",
       "title": "Description",
       "type": "string"
     },
     "old_ledger": {
+      "default": "",
       "title": "Old Ledger",
       "type": "string"
     },
     "new_ledger": {
+      "default": "",
       "title": "New Ledger",
       "type": "string"
     },
     "old_tax": {
+      "default": "",
       "title": "Old Tax",
       "type": "string"
     },
     "new_tax": {
+      "default": "",
       "title": "New Tax",
       "type": "string"
+    },
+    "actor_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Actor Id"
+    },
+    "created_at": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Created At"
     }
   },
   "required": [
     "document_id",
-    "vendor_gstin",
-    "hsn_sac",
-    "description",
-    "old_ledger",
-    "new_ledger",
-    "old_tax",
-    "new_tax"
+    "vendor_gstin"
   ],
   "title": "CorrectionEvent",
   "type": "object"

@@ -4,6 +4,12 @@
       "properties": {
         "ref_type": {
           "default": "new_ref",
+          "enum": [
+            "new_ref",
+            "against_ref",
+            "advance",
+            "on_account"
+          ],
           "title": "Ref Type",
           "type": "string"
         },
@@ -12,13 +18,20 @@
           "type": "string"
         },
         "due_date": {
-          "title": "Due Date",
-          "type": "string"
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Due Date"
         }
       },
       "required": [
-        "ref",
-        "due_date"
+        "ref"
       ],
       "title": "BillWise",
       "type": "object"
@@ -26,7 +39,12 @@
     "GstDetails": {
       "properties": {
         "treatment": {
-          "description": "intra | inter | exempt",
+          "default": "exempt",
+          "enum": [
+            "intra",
+            "inter",
+            "exempt"
+          ],
           "title": "Treatment",
           "type": "string"
         },
@@ -45,9 +63,6 @@
           "type": "object"
         }
       },
-      "required": [
-        "treatment"
-      ],
       "title": "GstDetails",
       "type": "object"
     },
@@ -137,7 +152,12 @@
       "type": "string"
     },
     "voucher_type": {
-      "description": "purchase | debit_note | credit_note | payment",
+      "enum": [
+        "purchase",
+        "debit_note",
+        "credit_note",
+        "payment"
+      ],
       "title": "Voucher Type",
       "type": "string"
     },

@@ -32,7 +32,7 @@ def inv_draft_risk():
         document_id="doc-sum-1",
         score=0,
         band="low",
-        marks=[RiskMark(field="total", check="sanity", ok=True, note="Looks good")]
+        marks=[RiskMark(field="narration", check="suspicious_language", ok=True, note="Looks good")]
     )
     return inv, draft, risk
 
@@ -47,5 +47,17 @@ def test_summary_worker(mock_call_llm, inv_draft_risk):
     
     result = worker.generate_summary("client1", inv, draft, risk)
     
-    assert result == "Everything mapped fine."
+    lines = result.splitlines()
+    assert 4 <= len(lines) <= 6
+    assert any("V1" in line for line in lines)
+    assert any("100" in line for line in lines)
+    assert any("intra" in line.lower() for line in lines)
+    assert any("low" in line.lower() for line in lines)
+    assert any("V1" in line and "ledger" in line.lower() for line in lines)
     assert len(writer.logs) == 1
+
+
+def test_summary_runs_without_monkeypatch(inv_draft_risk):
+    result = SummaryWorker(UsageWriter()).generate_summary("client1", *inv_draft_risk)
+    assert len(result.splitlines()) == 5
+

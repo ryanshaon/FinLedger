@@ -42,7 +42,7 @@ def test_risk_worker(mock_call_llm, invoice_and_draft):
       "marks": [
         {
           "field": "total",
-          "check": "historical_amount_anomaly",
+          "check": "identity_impersonation",
           "ok": false,
           "note": "High value compared to historical norms"
         }
@@ -57,5 +57,5 @@ def test_risk_worker(mock_call_llm, invoice_and_draft):
     
     assert score.score == 80
     assert score.band == "high"
-    assert "historical_amount_anomaly" in score.marks[0].check
+    assert "identity_impersonation" in score.marks[0].check
     assert len(writer.logs) == 1

@@ -3,7 +3,7 @@ from .schemas import (
     RiskScore, RiskMark,
     VoucherDraft, VoucherLine, GstDetails, TdsDetails, BillWise,
     CorrectionEvent,
-    MapTrace
+    MapTrace, MapResult
 )
 
 __all__ = [
@@ -11,5 +11,5 @@ __all__ = [
     "RiskScore", "RiskMark",
     "VoucherDraft", "VoucherLine", "GstDetails", "TdsDetails", "BillWise",
     "CorrectionEvent",
-    "MapTrace"
+    "MapTrace", "MapResult"
 ]

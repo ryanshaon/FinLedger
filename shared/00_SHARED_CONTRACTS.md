@@ -59,7 +59,7 @@ Bands: Low 0–24 (auto-map; auto-post only if policy). Medium 25–59 (review b
   "lines": [{ "ledger": "", "amount": 0, "is_debit": true, "cost_centre": null }],
   "gst": { "treatment": "intra | inter | exempt", "input_ledgers": [], "tax_breakup": {} },
   "tds": { "applicable": false, "section": null, "ledger": null, "amount": 0 },
-  "bill_wise": { "ref_type": "new_ref", "ref": "INV-001", "due_date": "YYYY-MM-DD" },
+  "bill_wise": { "ref_type": "new_ref", "ref": "INV-001", "due_date": "YYYY-MM-DD | null" },
   "narration": "",
   "attachment_document_id": "uuid",
   "reasons": ["mapped HSN 7208 to Purchase-RM from vendor memory"],
