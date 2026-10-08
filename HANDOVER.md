@@ -55,8 +55,8 @@ PYTHONPATH=person2_platform/src:person3_control_ui/src person3_control_ui/.venv/
 docker build -t finledger:ci .        # CI "image" job
 ```
 
-Expected on `main` @ `1eb2bbd`: **Person 1 41 passed, evals 3/3 + 5/5, Person 2 112 passed, Person 3 38 passed**,
-CI `test` + `image` green.
+As of merged PR #8: **Person 1 41 passed, evals 3/3 + 5/5, Person 2 127 passed, Person 3 38 passed**;
+PR #7 and #8 had green `test` + `image` CI. Re-run exact counts after subsequent merges.
 
 - DB tests start a throwaway PostgreSQL via `initdb` (needs PostgreSQL on PATH). As root they run it as the
   `postgres` OS user automatically. On Windows the sandbox used to stall `initdb`: prefer CI or WSL.
@@ -69,7 +69,7 @@ CI `test` + `image` green.
 
 State verified 2026-10-08:
 - `public.schema_migrations` has `001`–`008`, matching the repo files exactly. **Do not re-apply them.**
-  The next migration is `009`.
+  Migration 009 is merged but not yet applied; migration 010 is on `handover/auth-ui` until its PR is green.
 - 24 public tables, all RLS on; `anon`/`authenticated`/`service_role` have no table grants (006).
 - Security advisor: only the intentional INFO "RLS enabled, no policy" on `schema_migrations`.
 - Bucket `finledger-documents-dev`: private, 25 MiB limit, 0 policies (intentional: app uses S3 keys), 0 objects.
@@ -96,11 +96,11 @@ Gotchas:
 | Tenancy + RLS, queue, intake, storage, outbox worker | `person2_platform` | tested |
 | Supabase hardening 006/007 | migrations | applied on staging |
 | Auth subject link 008 | `migrations/008_supabase_auth_subject.sql` | applied on staging. Rule: **never auto-link by email/JWT metadata**; admin links explicitly |
-| Supabase JWT verifier | `finledger_platform/supabase_auth.py` | tested offline (JWKS, ES256/RS256, key_ops verify-only, issuer pinned). Returns subject UUID only; **not wired into any route yet** |
+| Supabase JWT verifier + Auth/session backend | `finledger_platform/supabase_auth.py`, `auth_gateway.py`, `browser_sessions.py` | tested offline and with local Postgres; PR #7/#8 merged. Browser routes are on `handover/auth-ui`, not live on staging |
 | Staging proof tools | `finledger-platform isolation-check`, `finledger-platform s3-smoke` | tested; s3-smoke never run against real Supabase (no valid keys yet) |
 | Runtime image + local stack | `Dockerfile`, `compose.yaml` | built and run: API + control UI healthy, worker up |
 | Control UI entry point | `finledger-control` | uses `make_pool` (RLS guard) and full S3 settings |
-| Auth design | `docs/plans/AUTH_SUPABASE_DESIGN.md` | proposed; steps 1 (008) and 3 (JWT verifier) done |
+| Auth design | `docs/plans/AUTH_SUPABASE_DESIGN.md` | partially implemented; invite and staging E2E remain |
 
 ## Open work, in priority order
 
@@ -108,15 +108,14 @@ Gotchas:
    New access key) and putting them in environment settings, never in chat. Then
    `FINLEDGER_STORE=s3 ... finledger-platform s3-smoke`.
 2. **Sign-in (Supabase Auth)**, per `docs/plans/AUTH_SUPABASE_DESIGN.md` section 7:
-   - migration `009`: server-side `sessions` table (RLS on, no API grants, refresh token encrypted with
-     `FINLEDGER_ENC_KEY`), plus audit rows
-   - Person 3 `/login`, `/logout`, `/mfa`, and session middleware for browser routes; keep bearer tokens for
-     API/agent routes
+   - migration `009` private browser sessions merged in PR #7, **not applied to staging**. Migration `010` MFA
+     cookie rekey is on `handover/auth-ui`, pending PR/CI. Apply both in order after they are committed/merged;
+     never run SQL without its matching committed migration.
+   - Person 3 `/login`, `/logout`, `/mfa`, and cookie-backed browser routes are on `handover/auth-ui`; keep bearer
+     tokens for API/agent routes. Local P2 130 passed and P3 43 passed with this branch, pending CI.
    - invite endpoint (firm admin + aal2), which sets `auth_subject` explicitly
-   - **Blocked on 3 user decisions** (recommendations in brackets):
-     - password + TOTP MFA vs email-code only [password + MFA]
-     - SSO now? [no, needs Pro plan]
-     - idle/absolute session lifetime [8 h absolute, 30 min idle for approvers/payers]
+   - **Owner decisions answered:** password + TOTP MFA; defer SSO; 8 h absolute and 30 min idle browser sessions.
+     The implementation gates all browser staff on AAL2 and applies the stricter timeouts to all staff.
 3. **App login role on staging** (`fl_app` or similar, member of `finledger_app` + worker roles), password chosen
    by the user and stored in secret settings; connect via the Supabase **session pooler**.
 4. **Email**: Resend outbox delivery is implemented; needs a verified sender domain and key. Inbound domain/webhook

@@ -68,7 +68,14 @@ class BrowserSessions:
             verified = self._verifier.verify_staff(tokens.access_token)
         except (AuthUnavailable, InvalidStaffToken):
             raise SessionDenied("sign-in denied") from None
-        staff = self._staff(conn, verified.subject)
+        try:
+            staff = self._staff(conn, verified.subject)
+        except SessionDenied:
+            try:
+                self._gateway.sign_out(tokens.access_token)
+            except AuthUnavailable:
+                pass
+            raise
         cookie = secrets.token_urlsafe(32)
         conn.execute("select finledger_private.staff_session_start(%s, %s, %s, %s)",
                      (self._hash(cookie), staff["user_id"],
@@ -109,3 +116,45 @@ class BrowserSessions:
             pass  # Local revocation must succeed even if Supabase is unavailable.
         finally:
             conn.execute("select finledger_private.staff_session_revoke(%s)", (digest,))
+
+    def _mfa_credentials(self, conn, cookie: str) -> tuple[bytes, dict, dict]:
+        self.resolve(conn, cookie)  # Re-check identity and refresh access token when required.
+        digest = self._hash(cookie)
+        row = conn.execute("select * from finledger_private.staff_session_touch(%s)", (digest,)).fetchone()
+        if not row:
+            raise SessionDenied("session unavailable")
+        return digest, row, self._open(row["credential_ciphertext"])
+
+    def mfa_factors(self, conn, cookie: str) -> list[str]:
+        _, _, credentials = self._mfa_credentials(conn, cookie)
+        try:
+            return self._gateway.verified_totp_factors(credentials["access"])
+        except AuthUnavailable:
+            raise SessionDenied("MFA unavailable") from None
+
+    def mfa_enroll(self, conn, cookie: str) -> tuple[str, str]:
+        _, _, credentials = self._mfa_credentials(conn, cookie)
+        try:
+            return self._gateway.enroll_totp(credentials["access"])
+        except AuthUnavailable:
+            raise SessionDenied("MFA unavailable") from None
+
+    def mfa_verify(self, conn, cookie: str, factor_id: str, code: str) -> str:
+        digest, row, credentials = self._mfa_credentials(conn, cookie)
+        try:
+            challenge = self._gateway.challenge_totp(credentials["access"], factor_id)
+            tokens = self._gateway.verify_totp(credentials["access"], factor_id, challenge, code)
+            verified = self._verifier.verify_staff(tokens.access_token)
+            staff = self._staff(conn, verified.subject)
+            if verified.aal != "aal2" or staff["user_id"] != row["user_id"]:
+                raise SessionDenied("MFA identity mismatch")
+            upgraded_cookie = secrets.token_urlsafe(32)
+            ok = conn.execute("select finledger_private.staff_session_upgrade(%s, %s, %s, %s, %s) as ok",
+                              (digest, self._hash(upgraded_cookie), row["version"],
+                               self._seal(tokens.access_token, tokens.refresh_token),
+                               verified.expires_at)).fetchone()["ok"]
+            if not ok:
+                raise SessionDenied("session changed; retry")
+            return upgraded_cookie
+        except (AuthUnavailable, InvalidStaffToken):
+            raise SessionDenied("MFA denied") from None

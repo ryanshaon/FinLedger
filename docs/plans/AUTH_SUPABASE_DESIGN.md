@@ -1,12 +1,12 @@
 # Customer sign-in with Supabase Auth: design
 
-Status: **proposed, not implemented.** Scope: Person 2 API + Person 3 control UI. Person 4 untouched.
+Status: **partially implemented.** Migration 008 is applied to staging; migration 009 is merged but has not been applied there. Migration 010 (atomic cookie replacement after MFA) and Person 3 browser routes are on `handover/auth-ui`, pending PR/CI. JWT verification and the server-side Auth/session foundation are merged. Invites, staging Auth configuration, and real-user E2E testing remain open. Scope: Person 2 API + Person 3 control UI. Person 4 untouched.
 
 ## 1. Where we are today
 
 | Caller | How it authenticates now | Problem |
 |---|---|---|
-| Staff in a browser (Person 3 UI) | `Authorization: Bearer <api token>` that a reverse proxy/SSO layer must inject | No login page, no sessions, no MFA, no password reset. Nothing real injects the token yet. |
+| Staff in a browser (Person 3 UI) | Legacy bearer token on main; server-side Supabase login/MFA is being added | Staging login is not live until migration 009, Auth settings and secrets are configured and E2E-tested. |
 | Staff API / integrations | Bearer API token, sha256-hashed in `users.api_token_hash`, resolved by `auth_user()` | Fine for machines; not for people. |
 | Person 4 site agent | Bearer agent token (`/agent/...`) | Fine, stays as is. |
 | Vendors | `/i/{public_token}` upload link + inbound email | Fine, no accounts by design. |
@@ -38,8 +38,9 @@ Why not keep the reverse-proxy token injection? It pushes login, MFA and session
 3. Existing authorization continues unchanged: `user_client_roles()`, SoD rules, CSRF double-submit cookie (already in Person 3).
 
 ### 3.3 MFA
-- Staff with `firm_admin` or `approver`/`payer` roles **must** have `aal2` (verified TOTP) in the JWT `aal` claim; otherwise redirect to `/mfa`.
+- Browser staff must have `aal2` (verified TOTP) in the JWT `aal` claim before seeing client data; otherwise redirect to `/mfa`. This is stricter than the initial firm-admin/approver/payer minimum and matches the owner's password-plus-TOTP decision.
 - Enrolment/challenge via `/auth/v1/factors` endpoints, server-side, using the user's own access token.
+- Successful verification atomically replaces the AAL1 cookie hash with a new random cookie hash (migration 010), preserving the original absolute expiry.
 
 ### 3.4 Invites and first login (no public sign-up)
 - Turn **off** public sign-ups in Supabase Auth settings.
@@ -56,8 +57,9 @@ Why not keep the reverse-proxy token injection? It pushes login, MFA and session
 - Library: `PyJWT[crypto]` (new dependency).
 
 ## 5. Data model changes (one new migration, `009_...`)
-- `sessions` table (server-only, RLS on, no policies, no API-role grants): id (hash of cookie value), user_id, refresh token **encrypted with `FINLEDGER_ENC_KEY`**, access token expiry, aal, created/last_seen, ip/user-agent.
-- Audit rows for login, MFA enrolment, failed login, logout.
+- `finledger_private.staff_sessions` (migration 009, merged): SHA-256 cookie hash, user_id, Fernet-encrypted access and refresh tokens, access-token expiry, 30-minute idle and 8-hour absolute limits, compare-and-swap version. RLS on, no app/API table grants; narrow private SECURITY DEFINER functions only.
+- `finledger_private.staff_session_events` currently records session start and revocation. Failed-login and MFA audit events are still to be added.
+- Migration 010 adds `mfa_verified` audit events and the atomic cookie-rekey function. It is not yet applied to staging.
 
 ## 6. Configuration
 
@@ -72,13 +74,13 @@ Supabase dashboard settings: disable sign-ups, Site URL + redirect allow-list = 
 
 ## 7. Build order
 1. ~~Migration 008~~ done.
-2. `009` sessions + lookup function + tests (local throwaway Postgres as today).
-3. JWT verifier module + unit tests with a locally generated JWKS (no network).
-4. Person 3 `/login`, `/logout`, `/mfa`, session middleware replacing the `Authorization` header dependency for browser routes; keep bearer for API routes.
+2. ~~`009` sessions + lookup function + tests~~ merged in PR #7; **not yet applied to staging**.
+3. ~~JWT verifier module + unit tests~~ merged. Server-side Auth client and session manager merged in PR #8.
+4. Person 3 `/login`, `/logout`, `/mfa` and cookie-backed browser routes: implemented on `handover/auth-ui`, pending PR/CI. Legacy bearer remains for local development; staging/production fail startup without browser Auth config. All browser staff need AAL2 before client data.
 5. Invite endpoint (Person 2) behind firm-admin + aal2.
 6. Staging: configure the Supabase settings in section 6, create one test firm, run an end-to-end browser login (Playwright) including MFA.
 
-## 8. Open questions for the owner
-- Password + OTP, or OTP-only (passwordless)? Recommendation: password + mandatory TOTP for staff; OTP optional fallback.
-- Is SSO (SAML) needed for the first customers? It needs the Supabase Pro plan.
-- Session lifetime for idle staff (recommend 8 h absolute, 30 min idle for approvers/payers).
+## 8. Owner decisions (answered)
+- Password plus TOTP MFA; no email-code-only login.
+- Defer SSO until a customer requires it and the plan supports it.
+- Eight-hour absolute and 30-minute idle limit for approvers/payers. Migration 009 currently applies these stricter limits to **all** browser staff sessions.

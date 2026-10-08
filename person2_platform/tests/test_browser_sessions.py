@@ -24,6 +24,19 @@ class FakeGateway:
     def sign_out(self, token):
         self.signed_out = True
 
+    def verified_totp_factors(self, token):
+        return ["11111111-1111-1111-1111-111111111111"]
+
+    def enroll_totp(self, token):
+        return "22222222-2222-2222-2222-222222222222", "TESTSECRET"
+
+    def challenge_totp(self, token, factor):
+        return "33333333-3333-3333-3333-333333333333"
+
+    def verify_totp(self, token, factor, challenge, code):
+        assert code == "123456"
+        return AuthTokens("fresh-access", "fresh-refresh", 900)
+
 
 class FakeVerifier:
     subject = None
@@ -40,6 +53,7 @@ def test_sign_in_requires_explicit_subject_link_and_stores_only_ciphertext(owner
     sessions = BrowserSessions(gateway, verifier, Fernet.generate_key())
     with pytest.raises(SessionDenied):
         sessions.sign_in(conn, "admin@sharma.test", "password")
+    assert gateway.signed_out is True
 
     owner.execute("update users set auth_subject = %s where id = %s", (verifier.subject, world.admin1))
     cookie = sessions.sign_in(conn, "admin@sharma.test", "password")
@@ -83,3 +97,18 @@ def test_expired_access_token_is_refreshed_before_verification(owner, conn, worl
     owner.execute("update finledger_private.staff_sessions set access_expires_at = now() - interval '1 second'")
     expired[0] = True
     assert sessions.resolve(conn, cookie).aal == "aal2"
+
+
+def test_mfa_enrollment_and_verification_upgrade_only_same_identity(owner, conn, world):
+    verifier = FakeVerifier()
+    verifier.subject = uuid4()
+    owner.execute("update users set auth_subject = %s where id = %s", (verifier.subject, world.admin1))
+    sessions = BrowserSessions(FakeGateway(), verifier, Fernet.generate_key())
+    cookie = sessions.sign_in(conn, "admin@sharma.test", "password")
+    assert sessions.mfa_factors(conn, cookie) == ["11111111-1111-1111-1111-111111111111"]
+    assert sessions.mfa_enroll(conn, cookie) == ("22222222-2222-2222-2222-222222222222", "TESTSECRET")
+    upgraded = sessions.mfa_verify(conn, cookie, "11111111-1111-1111-1111-111111111111", "123456")
+    assert upgraded != cookie
+    with pytest.raises(SessionDenied):
+        sessions.resolve(conn, cookie)
+    assert sessions.resolve(conn, upgraded).aal == "aal2"
