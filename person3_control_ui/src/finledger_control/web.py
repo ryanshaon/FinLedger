@@ -36,6 +36,44 @@ def _page(title, body):
     return f'<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{escape(title)}</title><style>{CSS}</style></head><body><header class="topbar"><div class="brand">FinLedger <small>review desk</small></div><div>Control plane</div></header>{body}</body></html>'
 
 
+def render_login(csrf_token: str, error: str = "") -> str:
+    alert = f'<p role="alert" class="mark">{escape(error)}</p>' if error else ""
+    body = (f'<main class="shell" style="max-width:480px"><h1>Sign in</h1>{alert}'
+            f'<form method="post" action="/login"><input type="hidden" name="csrf_token" value="{escape(csrf_token, quote=True)}">'
+            '<p><label>Email<br><input name="email" type="email" autocomplete="username" required maxlength="320"></label></p>'
+            '<p><label>Password<br><input name="password" type="password" autocomplete="current-password" required maxlength="1024"></label></p>'
+            '<button type="submit">Sign in</button></form></main>')
+    return _page("Sign in · FinLedger", body)
+
+
+def render_home(clients: list[dict], csrf_token: str) -> str:
+    links = ''.join(f'<li><a href="/clients/{escape(str(c["id"]), quote=True)}/review">{escape(c["name"])}</a></li>'
+                    for c in clients)
+    body = (f'<main class="shell"><div class="review-head"><h1>Your clients</h1>'
+            f'<form method="post" action="/logout"><input type="hidden" name="csrf_token" '
+            f'value="{escape(csrf_token, quote=True)}"><button class="secondary">Sign out</button></form></div>'
+            f'<ul>{links}</ul></main>')
+    return _page("Clients · FinLedger", body)
+
+
+def render_mfa(csrf_token: str, factor_id: str = "", secret: str = "", error: str = "") -> str:
+    alert = f'<p role="alert" class="mark">{escape(error)}</p>' if error else ""
+    if factor_id:
+        setup = (f'<p>Add this setup key to your authenticator app: <code>{escape(secret)}</code></p>'
+                 if secret else '<p>Enter the six-digit code from your authenticator app.</p>')
+        form = (f'<form method="post" action="/mfa/verify"><input type="hidden" name="csrf_token" '
+                f'value="{escape(csrf_token, quote=True)}"><input type="hidden" name="factor_id" '
+                f'value="{escape(factor_id, quote=True)}"><label>Authenticator code<br>'
+                '<input name="code" inputmode="numeric" autocomplete="one-time-code" '
+                'pattern="[0-9]{6}" maxlength="6" required></label><p><button>Verify code</button></p></form>')
+    else:
+        setup = '<p>Set up two-step verification with a TOTP authenticator app.</p>'
+        form = (f'<form method="post" action="/mfa/enroll"><input type="hidden" name="csrf_token" '
+                f'value="{escape(csrf_token, quote=True)}"><button>Start setup</button></form>')
+    return _page("Two-step verification · FinLedger",
+                 f'<main class="shell" style="max-width:500px"><h1>Two-step verification</h1>{alert}{setup}{form}</main>')
+
+
 def render_inbox(items, counts, active, client_name):
     labels=(("new","New"),("needs_review","Needs review"),("approved","Approved"),("posted","Posted"),("exception","Exception"))
     tabs=''.join(f'<a class="{"active" if k==active else ""}" href="?queue={k}">{v}<span class="count">{counts.get(k,0)}</span></a>' for k,v in labels)

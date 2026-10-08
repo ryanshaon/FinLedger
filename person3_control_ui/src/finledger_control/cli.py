@@ -4,6 +4,21 @@ import argparse, os
 from .api import create_app
 
 
+def browser_sessions_from_env():
+    from finledger_platform.auth_gateway import SupabaseAuthClient
+    from finledger_platform.browser_sessions import BrowserSessions
+    from finledger_platform.supabase_auth import SupabaseStaffJWTVerifier
+
+    url=os.environ.get("SUPABASE_URL","").rstrip("/")
+    key=os.environ.get("SUPABASE_PUBLISHABLE_KEY","")
+    enc=os.environ.get("FINLEDGER_ENC_KEY","")
+    if not all((url,key,enc)):
+        if os.environ.get("FINLEDGER_ENV","").lower() in {"production","staging"}:
+            raise RuntimeError("Supabase browser authentication configuration is required")
+        return None  # Legacy bearer mode for local development only.
+    return BrowserSessions(SupabaseAuthClient(url,key),SupabaseStaffJWTVerifier(url+"/auth/v1"),enc)
+
+
 def main():
     p=argparse.ArgumentParser(prog="finledger-control"); p.add_argument("--host",default="127.0.0.1"); p.add_argument("--port",type=int,default=8770)
     args=p.parse_args(); dsn=os.environ.get("FINLEDGER_DATABASE_URL")
@@ -24,4 +39,6 @@ def main():
                          os.environ["FINLEDGER_SIGNING_SECRET"].encode(),
                          os.environ.get("FINLEDGER_APP_BASE_URL","http://localhost:8000"))
     import uvicorn
-    uvicorn.run(create_app(pool,source_url=lambda path,name: store.signed_url(path,300,name)),host=args.host,port=args.port,proxy_headers=True)
+    uvicorn.run(create_app(pool,source_url=lambda path,name: store.signed_url(path,300,name),
+                           browser_sessions=browser_sessions_from_env()),
+                host=args.host,port=args.port,proxy_headers=True)

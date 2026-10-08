@@ -88,3 +88,26 @@ def test_refresh_is_compare_and_swap_and_cannot_resurrect_expired_session(owner,
 def test_session_start_rejects_bad_hash_and_unknown_user(conn):
     with pytest.raises(psycopg.errors.CheckViolation):
         _start(conn, uuid4(), b"short")
+
+
+def test_mfa_upgrade_atomically_rekeys_cookie_and_preserves_absolute_deadline(owner, conn, world):
+    old, new = _digest(b"aal1-cookie"), _digest(b"aal2-cookie")
+    _start(conn, world.admin1, old)
+    deadline = owner.execute(
+        "select absolute_expires_at from finledger_private.staff_sessions where cookie_hash = %s", (old,)
+    ).fetchone()[0]
+    future = datetime.now(timezone.utc) + timedelta(minutes=15)
+    assert conn.execute(
+        "select finledger_private.staff_session_upgrade(%s, %s, %s, %s, %s) as ok",
+        (old, new, 1, b"aal2-encrypted", future),
+    ).fetchone()["ok"] is True
+    assert conn.execute("select * from finledger_private.staff_session_touch(%s)", (old,)).fetchone() is None
+    row = conn.execute("select * from finledger_private.staff_session_touch(%s)", (new,)).fetchone()
+    assert row["credential_ciphertext"] == b"aal2-encrypted" and row["version"] == 2
+    assert owner.execute(
+        "select absolute_expires_at from finledger_private.staff_sessions where cookie_hash = %s", (new,)
+    ).fetchone()[0] == deadline
+    assert conn.execute(
+        "select finledger_private.staff_session_upgrade(%s, %s, %s, %s, %s) as ok",
+        (old, _digest(b"third"), 1, b"stale", future),
+    ).fetchone()["ok"] is False
