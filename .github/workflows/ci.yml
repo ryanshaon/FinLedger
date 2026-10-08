@@ -24,8 +24,8 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y postgresql
-          initdb_path="$(find /usr/lib/postgresql -maxdepth 2 -type f -name initdb -print -quit)"
-          test -n "$initdb_path"
+          initdb_path="$(find /usr/lib/postgresql -maxdepth 3 -type f -name initdb -print -quit)"
+          test -x "$initdb_path"
           echo "$(dirname "$initdb_path")" >> "$GITHUB_PATH"
 
       - name: Sync Person2 dependencies
