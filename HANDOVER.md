@@ -130,7 +130,14 @@ Gotchas:
 6. **Person 1**: audit recorded in `docs/audits/PERSON1_PRODUCTION_READINESS.md` (PR #11 merged). Live provider,
    persistent RAG/usage/cap state, extract queue consumer and PII policy remain release blockers. Mock evals are
    not production AI readiness.
-7. **Performance**: Supabase advisor now lists 28 unindexed foreign keys (the extra one is the new private
+7. **Windows `.env` (reminder for ChatGPT/Codex, next session on the PC):** the owner created real Supabase S3 keys
+   and put them only in the Claude cloud environment settings. The Windows checkout has **no `.env`** yet. Help the
+   owner run `Copy-Item .env.example .env; notepad .env` and add `FINLEDGER_STORE=s3`,
+   `FINLEDGER_S3_BUCKET=finledger-documents-dev`,
+   `FINLEDGER_S3_ENDPOINT_URL=https://hxymklwqifwojziewtcv.supabase.co/storage/v1/s3`,
+   `FINLEDGER_S3_REGION=ap-south-1`, `FINLEDGER_S3_ADDRESSING_STYLE=path`, and **the owner types**
+   `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` themselves. Never read, print or commit the values; `.env` is gitignored.
+8. **Performance**: Supabase advisor now lists 28 unindexed foreign keys (the extra one is the new private
    `staff_session_events.user_id` FK) and 13 “unused” indexes on this empty database. Prioritize indexes from
    real query plans and FK delete/update costs; do not drop useful indexes based on zero-data statistics.
 
