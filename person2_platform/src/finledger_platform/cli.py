@@ -1,9 +1,10 @@
-"""finledger-platform migrate | create-firm | serve | worker | outbox-worker"""
+"""finledger-platform migrate | create-firm | serve | worker | outbox-worker | isolation-check | s3-smoke"""
 from __future__ import annotations
 
 import argparse
 import logging
 import os
+import sys
 from uuid import UUID
 
 import psycopg
@@ -34,6 +35,8 @@ def main(argv: list[str] | None = None) -> None:
     sub.add_parser("worker", help="run the ingest worker")
     mail = sub.add_parser("outbox-worker", help="deliver one client's queued email replies")
     mail.add_argument("--client-id", required=True, type=UUID)
+    sub.add_parser("isolation-check", help="rollback-only two-tenant RLS proof (owner DSN; writes nothing)")
+    sub.add_parser("s3-smoke", help="put/get/presign/delete one synthetic object in the configured S3 bucket")
     args = p.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 
@@ -69,6 +72,27 @@ def main(argv: list[str] | None = None) -> None:
         s = Settings()
         with make_pool(s.database_url, min_size=1, max_size=2) as pool:
             run_forever(pool, args.client_id, sender)
+    elif args.cmd == "isolation-check":
+        from .isolation_check import run
+
+        _report(run(os.environ.get("FINLEDGER_OWNER_DATABASE_URL") or sys.exit("set FINLEDGER_OWNER_DATABASE_URL")))
+    elif args.cmd == "s3-smoke":
+        from .s3_smoke import run
+        from .store import S3Store, make_store
+
+        s = Settings()
+        store = make_store(s)
+        if not isinstance(store, S3Store):
+            sys.exit("s3-smoke needs FINLEDGER_STORE=s3")
+        _report(run(store, s.s3_endpoint_url))
+
+
+def _report(rep) -> None:
+    for label in rep.passed:
+        print(f"PASS  {label}")
+    for label in rep.failed:
+        print(f"FAIL  {label}")
+    sys.exit(0 if rep.ok else 1)
 
 
 if __name__ == "__main__":
