@@ -18,6 +18,13 @@ def test_settings_and_router_are_environment_backed(monkeypatch):
     assert isinstance(router.provider, MockProvider)
 
 
+@pytest.mark.parametrize("environment", ["staging", "production"])
+def test_mock_provider_cannot_start_in_hosted_environment(monkeypatch, environment):
+    monkeypatch.setenv("FINLEDGER_ENV", environment)
+    with pytest.raises(RuntimeError, match="mock LLM provider"):
+        ModelRouter(Settings(provider="mock"))
+
+
 def test_provider_calls_share_a_document_kill_switch():
     switch = KillSwitch(limit=20)
     provider = MockProvider(kill_switch=switch)

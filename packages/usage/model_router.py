@@ -35,6 +35,8 @@ _PROVIDERS = {}
 class ModelRouter:
     def __init__(self, settings: Settings | None = None):
         self.settings = settings or Settings.from_env()
+        if os.getenv("FINLEDGER_ENV", "development").strip().lower() in {"staging", "production"} and self.settings.provider == "mock":
+            raise RuntimeError("mock LLM provider cannot run in a hosted environment")
         self.routes = {
             "extract": self.settings.model_extract,
             "extract_vision": self.settings.model_extract_vision,
