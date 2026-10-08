@@ -52,6 +52,13 @@ def test_migrations_revoke_data_api_access_and_secure_operational_tables(owner_d
                         (role, f"public.{function}"),
                     ).fetchone()[0]
                     assert not allowed, f"{role} can call {function}"
+                assert not conn.execute(
+                    "select has_schema_privilege(%s, 'finledger_private', 'USAGE')", (role,)
+                ).fetchone()[0], f"{role} can enter the private auth schema"
+                assert not conn.execute(
+                    "select has_function_privilege(%s, 'finledger_private.auth_user_by_subject(uuid)', 'EXECUTE')",
+                    (role,),
+                ).fetchone()[0], f"{role} can call the private auth lookup"
 
             for table in ("rate_limits", "schema_migrations"):
                 enabled = conn.execute(
