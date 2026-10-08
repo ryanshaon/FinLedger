@@ -15,6 +15,17 @@ from finledger_platform.tenancy import create_firm_with_admin, create_client, cr
 APP_PASSWORD = "fl_control_test_pw"
 
 
+def _pg_runner(data):
+    """initdb/pg_ctl refuse to run as root (e.g. cloud containers); run them as the `postgres` OS user instead."""
+    if os.name == "nt" or os.geteuid() != 0:
+        return []
+    import pwd
+    try: pg = pwd.getpwnam("postgres")
+    except KeyError: pytest.skip("running as root and no `postgres` OS user to own the test cluster")
+    os.chown(data, pg.pw_uid, pg.pw_gid)
+    return ["runuser", "-u", "postgres", "--"]
+
+
 def _free_port():
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0)); return s.getsockname()[1]
@@ -26,13 +37,14 @@ def owner_dsn():
     if not initdb:
         pytest.skip("Postgres initdb not installed")
     bindir, data, port = Path(initdb).parent, Path(tempfile.mkdtemp(prefix="flp3_")), _free_port()
-    subprocess.run([str(bindir/"initdb"), "-D", str(data), "-U", "postgres", "-A", "trust", "-E", "UTF8"],
+    run_as = _pg_runner(data)
+    subprocess.run([*run_as, str(bindir/"initdb"), "-D", str(data), "-U", "postgres", "-A", "trust", "-E", "UTF8"],
                    check=True, capture_output=True)
     options = f"-p {port} -c listen_addresses=127.0.0.1"
     if os.name != "nt":
         options += f" -c unix_socket_directories={data}"
     try:
-        subprocess.run([str(bindir/"pg_ctl"), "-D", str(data), "-o", options,
+        subprocess.run([*run_as, str(bindir/"pg_ctl"), "-D", str(data), "-o", options,
                         "-l", str(data/"log.txt"), "-w", "start"], check=True,
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except subprocess.CalledProcessError as exc:
@@ -40,7 +52,7 @@ def owner_dsn():
         raise RuntimeError(f"temporary PostgreSQL failed to start: {log[-8000:]}") from exc
     try: yield f"postgresql://postgres@127.0.0.1:{port}/postgres"
     finally:
-        subprocess.run([str(bindir/"pg_ctl"), "-D", str(data), "-m", "immediate", "stop"],
+        subprocess.run([*run_as, str(bindir/"pg_ctl"), "-D", str(data), "-m", "immediate", "stop"],
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         shutil.rmtree(data, ignore_errors=True)
 
