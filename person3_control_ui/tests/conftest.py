@@ -28,9 +28,13 @@ def owner_dsn():
     bindir, data, port = Path(initdb).parent, Path(tempfile.mkdtemp(prefix="flp3_")), _free_port()
     subprocess.run([str(bindir/"initdb"), "-D", str(data), "-U", "postgres", "-A", "trust", "-E", "UTF8"],
                    check=True, capture_output=True)
-    subprocess.run([str(bindir/"pg_ctl"), "-D", str(data), "-o", f"-p {port} -c listen_addresses=127.0.0.1",
-                    "-l", str(data/"log.txt"), "-w", "start"], check=True,
-                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    try:
+        subprocess.run([str(bindir/"pg_ctl"), "-D", str(data), "-o", f"-p {port} -c listen_addresses=127.0.0.1",
+                        "-l", str(data/"log.txt"), "-w", "start"], check=True,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except subprocess.CalledProcessError as exc:
+        log = (data/"log.txt").read_text(encoding="utf-8", errors="replace") if (data/"log.txt").exists() else "no postgres log"
+        raise RuntimeError(f"temporary PostgreSQL failed to start: {log[-8000:]}") from exc
     try: yield f"postgresql://postgres@127.0.0.1:{port}/postgres"
     finally:
         subprocess.run([str(bindir/"pg_ctl"), "-D", str(data), "-m", "immediate", "stop"],
