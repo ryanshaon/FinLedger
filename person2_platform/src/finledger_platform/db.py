@@ -72,6 +72,6 @@ def migrate(owner_dsn: str) -> list[str]:
                 continue
             with conn.transaction():
                 conn.execute(f.read_text(encoding="utf-8"))
-                conn.execute("insert into schema_migrations (name) values (%s)", (f.name,))
+                conn.execute("insert into schema_migrations (name) values (%s) on conflict (name) do nothing", (f.name,))
             applied.append(f.name)
     return applied
