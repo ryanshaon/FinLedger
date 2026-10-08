@@ -9,6 +9,8 @@ from __future__ import annotations
 import json
 import threading
 import time
+from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Callable
 from urllib.parse import urlsplit
 from urllib.request import HTTPRedirectHandler, build_opener
@@ -25,6 +27,13 @@ _MAX_TOKEN_CHARS = 16 * 1024
 
 class InvalidStaffToken(ValueError):
     """A token could not be authenticated; its content is never included."""
+
+
+@dataclass(frozen=True)
+class VerifiedStaffToken:
+    subject: UUID
+    aal: str
+    expires_at: datetime
 
 
 class _NoRedirects(HTTPRedirectHandler):
@@ -87,8 +96,8 @@ class SupabaseStaffJWTVerifier:
         self._keys = parsed
         self._expires_at = time.monotonic() + _CACHE_SECONDS
 
-    def verify(self, token: str) -> UUID:
-        """Return the authenticated user ID or raise ``InvalidStaffToken``."""
+    def verify_staff(self, token: str) -> VerifiedStaffToken:
+        """Return only verified identity, assurance and expiry; never JWT metadata privileges."""
         try:
             if not isinstance(token, str) or not 0 < len(token) <= _MAX_TOKEN_CHARS:
                 raise ValueError("malformed token")
@@ -112,7 +121,15 @@ class SupabaseStaffJWTVerifier:
             )
             if claims.get("role") != "authenticated":
                 raise ValueError("not an authenticated user")
-            return UUID(claims["sub"])
+            aal = claims.get("aal", "aal1")
+            if aal not in ("aal1", "aal2"):
+                raise ValueError("invalid assurance level")
+            return VerifiedStaffToken(UUID(claims["sub"]), aal,
+                                      datetime.fromtimestamp(claims["exp"], timezone.utc))
         except Exception:
             # Never expose a token, claims, network URL, or library exception.
             raise InvalidStaffToken("invalid staff token") from None
+
+    def verify(self, token: str) -> UUID:
+        """Compatibility method for callers needing the authenticated subject only."""
+        return self.verify_staff(token).subject
