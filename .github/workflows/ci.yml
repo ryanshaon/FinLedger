@@ -50,3 +50,15 @@ jobs:
         env:
           PYTHONPATH: person2_platform/src:person3_control_ui/src
         run: person3_control_ui/.venv/bin/python -m pytest person3_control_ui/tests -q --basetemp=.pytest-person3
+
+  image:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build runtime image
+        run: docker build -t finledger:ci .
+      - name: Image entry points resolve
+        run: |
+          docker run --rm finledger:ci finledger-platform --help
+          docker run --rm finledger:ci python -c "import finledger_control.cli, finledger_platform.s3_smoke, boto3"
