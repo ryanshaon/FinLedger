@@ -55,8 +55,9 @@ PYTHONPATH=person2_platform/src:person3_control_ui/src person3_control_ui/.venv/
 docker build -t finledger:ci .        # CI "image" job
 ```
 
-As of merged PR #8: **Person 1 41 passed, evals 3/3 + 5/5, Person 2 127 passed, Person 3 38 passed**;
-PR #7 and #8 had green `test` + `image` CI. Re-run exact counts after subsequent merges.
+As of merged PR #10: Person 2 **131 passed** and Person 3 **43 passed** locally; PRs #7–#10 had green
+`test` + `image` CI. Person 1 baseline was 41 passed and evals 3/3 + 5/5 before the readiness guard;
+re-run exact counts after subsequent merges.
 
 - DB tests start a throwaway PostgreSQL via `initdb` (needs PostgreSQL on PATH). As root they run it as the
   `postgres` OS user automatically. On Windows the sandbox used to stall `initdb`: prefer CI or WSL.
@@ -67,9 +68,12 @@ PR #7 and #8 had green `test` + `image` CI. Re-run exact counts after subsequent
 
 ## Supabase staging (project `hxymklwqifwojziewtcv`, region `ap-south-1`, no customer data)
 
-State verified 2026-10-08:
-- `public.schema_migrations` has `001`–`008`, matching the repo files exactly. **Do not re-apply them.**
-  Migration 009 is merged but not yet applied; migration 010 is on `handover/auth-ui` until its PR is green.
+State verified 2026-10-09:
+- Both Supabase's migration history and `public.schema_migrations` include `001`–`011`. Migrations 009, 010 and
+  011 were applied from the exact committed files after green PRs #7, #9 and #10. **Do not re-apply them.**
+- `finledger_private.staff_sessions` and `staff_session_events` have RLS enabled and no direct SELECT grants to
+  `anon`, `authenticated` or `finledger_app`; all have zero rows. Security advisor only reports intentional INFO
+  “RLS enabled, no policy” for these two tables and `schema_migrations`.
 - 24 public tables, all RLS on; `anon`/`authenticated`/`service_role` have no table grants (006).
 - Security advisor: only the intentional INFO "RLS enabled, no policy" on `schema_migrations`.
 - Bucket `finledger-documents-dev`: private, 25 MiB limit, 0 policies (intentional: app uses S3 keys), 0 objects.
@@ -108,11 +112,11 @@ Gotchas:
    New access key) and putting them in environment settings, never in chat. Then
    `FINLEDGER_STORE=s3 ... finledger-platform s3-smoke`.
 2. **Sign-in (Supabase Auth)**, per `docs/plans/AUTH_SUPABASE_DESIGN.md` section 7:
-   - migration `009` private browser sessions merged in PR #7, **not applied to staging**. Migration `010` MFA
-     cookie rekey is on `handover/auth-ui`, pending PR/CI. Apply both in order after they are committed/merged;
-     never run SQL without its matching committed migration.
-   - Person 3 `/login`, `/logout`, `/mfa`, and cookie-backed browser routes are on `handover/auth-ui`; keep bearer
-     tokens for API/agent routes. Local P2 130 passed and P3 43 passed with this branch, pending CI.
+   - Migrations `009` private sessions, `010` MFA cookie rekey and `011` migration-history alignment are merged,
+     green in CI and applied to staging. Never re-apply them.
+   - Person 3 `/login`, `/logout`, `/mfa`, and cookie-backed browser routes are merged in PR #9; keep bearer
+     tokens for API/agent routes. Local P2 131 passed and P3 43 passed; staging Auth secrets/settings, real-user
+     E2E, and hosting remain open.
    - invite endpoint (firm admin + aal2), which sets `auth_subject` explicitly
    - **Owner decisions answered:** password + TOTP MFA; defer SSO; 8 h absolute and 30 min idle browser sessions.
      The implementation gates all browser staff on AAL2 and applies the stricter timeouts to all staff.
@@ -122,8 +126,9 @@ Gotchas:
    integration untested.
 5. **Hosting**: not provisioned. Recommendation: AWS ECS/Fargate in Mumbai, colocated with Supabase `ap-south-1`
    (Render is the simple alternative). Image is ready. Needs account + approval before paid resources.
-6. **Person 1**: audit live provider path, persistence, PII handling, kill switch. Mock evals passing is not
-   production AI readiness.
+6. **Person 1**: audit recorded in `docs/audits/PERSON1_PRODUCTION_READINESS.md` (PR pending). Live provider,
+   persistent RAG/usage/cap state, extract queue consumer and PII policy remain release blockers. Mock evals are
+   not production AI readiness.
 7. **Performance**: Supabase advisor lists 27 unindexed foreign keys; index with real workload in mind. Don't drop
    "unused" indexes on an empty DB.
 
