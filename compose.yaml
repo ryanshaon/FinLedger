@@ -1,0 +1,75 @@
+# Local full stack: Postgres + migrations + API + ingest worker + control UI + ClamAV.
+#   docker compose up --build
+# API http://127.0.0.1:8000/healthz, control UI http://127.0.0.1:8770/healthz.
+# All secrets below are LOCAL-ONLY placeholders. Staging/production take theirs from a secret manager.
+x-app: &app
+  build: .
+  image: finledger:local
+  environment: &env
+    FINLEDGER_DATABASE_URL: postgresql://fl_app:local_app_pw@db:5432/finledger
+    FINLEDGER_APP_BASE_URL: http://127.0.0.1:8000
+    FINLEDGER_SIGNING_SECRET: local_signing_secret_not_for_production_32c
+    FINLEDGER_INBOUND_WEBHOOK_SECRET: local_inbound_secret_not_for_production
+    FINLEDGER_INBOUND_DOMAIN: inbound.localhost
+    FINLEDGER_STORE: local
+    FINLEDGER_VIRUS_SCANNER: clamd
+    FINLEDGER_CLAMD_HOST: clamav
+  volumes: [objects:/var/lib/finledger/objects]
+  depends_on:
+    migrate: {condition: service_completed_successfully}
+
+services:
+  db:
+    image: postgres:16
+    environment: {POSTGRES_DB: finledger, POSTGRES_PASSWORD: local_owner_pw}
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck: {test: ["CMD", "pg_isready", "-U", "postgres"], interval: 2s, retries: 30}
+
+  migrate:
+    image: finledger:local
+    build: .
+    environment:
+      FINLEDGER_OWNER_DATABASE_URL: postgresql://postgres:local_owner_pw@db:5432/finledger
+      FL_APP_PASSWORD: local_app_pw
+    # Migrations as owner, then the runtime login role: member of finledger_app + worker roles, never owner.
+    command:
+      - python
+      - -c
+      - |
+        import os, psycopg
+        from finledger_platform.db import migrate
+        dsn = os.environ["FINLEDGER_OWNER_DATABASE_URL"]
+        print("applied:", migrate(dsn) or "nothing new")
+        with psycopg.connect(dsn, autocommit=True) as c:
+            if not c.execute("select 1 from pg_roles where rolname = 'fl_app'").fetchone():
+                c.execute(psycopg.sql.SQL("create role fl_app login password {}").format(psycopg.sql.Literal(os.environ["FL_APP_PASSWORD"])))
+            c.execute("grant finledger_app, finledger_worker_ingest, finledger_worker_extract, finledger_worker_score, "
+                      "finledger_worker_map, finledger_worker_post, finledger_queue_ops to fl_app")
+    depends_on:
+      db: {condition: service_healthy}
+
+  api:
+    <<: *app
+    command: ["finledger-platform", "serve", "--host", "0.0.0.0", "--port", "8000"]
+    ports: ["127.0.0.1:8000:8000"]
+
+  worker:
+    <<: *app
+    command: ["finledger-platform", "worker"]
+    healthcheck: {disable: true}
+
+  control:
+    <<: *app
+    command: ["finledger-control", "--host", "0.0.0.0", "--port", "8770"]
+    environment:
+      <<: *env
+      PORT: "8770"
+    ports: ["127.0.0.1:8770:8770"]
+
+  clamav:
+    image: clamav/clamav:1.4
+    profiles: [scan]   # heavy (signature download); `docker compose --profile scan up` for real scanning
+
+volumes:
+  pgdata:
+  objects:
