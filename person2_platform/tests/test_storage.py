@@ -8,7 +8,8 @@ from test_link import drain, jobs
 
 from finledger_platform import tenancy
 from finledger_platform.db import tenant
-from finledger_platform.store import S3Store, check_key, object_key
+from finledger_platform.config import Settings
+from finledger_platform.store import S3Store, check_key, make_store, object_key
 
 
 def pair(client, world, c=None):
@@ -118,6 +119,55 @@ def test_s3_store_roundtrip():
         assert "X-Amz-Signature" in st.signed_url(key, 60, "inv.pdf")
         with pytest.raises(ValueError):
             st.put("global/raw.pdf", b"x", "application/pdf")
+
+
+def test_supabase_s3_uses_project_endpoint_path_style_and_no_sse(monkeypatch):
+    from urllib.parse import parse_qs, urlparse
+    from botocore.stub import Stubber
+
+    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "test-access-key")
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "test-secret-key")
+    monkeypatch.setenv("FINLEDGER_S3_ENDPOINT_URL", "https://project-ref.storage.supabase.co/storage/v1/s3")
+    monkeypatch.setenv("FINLEDGER_S3_REGION", "ap-south-1")
+    monkeypatch.setenv("FINLEDGER_S3_ADDRESSING_STYLE", "path")
+    settings = Settings(
+        database_url="postgresql://unused", signing_secret=b"test", inbound_webhook_secret=b"test",
+        store="s3", s3_bucket="documents",
+    )
+    store = make_store(settings)
+    key = "11111111-1111-1111-1111-111111111111/2026/09/22222222-2222-2222-2222-222222222222/raw.pdf"
+    with Stubber(store.s3) as stub:
+        stub.add_response("put_object", {"ETag": '"test"'}, {
+            "Bucket": "documents", "Key": key, "Body": b"pdf", "ContentType": "application/pdf",
+        })
+        store.put(key, b"pdf", "application/pdf")
+        stub.assert_no_pending_responses()
+
+    url = urlparse(store.signed_url(key, 60))
+    assert url.netloc == "project-ref.storage.supabase.co"
+    assert url.path == f"/storage/v1/s3/documents/{key}"
+    assert parse_qs(url.query)["X-Amz-Credential"][0].split("/")[2] == "ap-south-1"
+    assert "X-Amz-Signature" in parse_qs(url.query)
+
+
+@pytest.mark.parametrize("sse", ["auto", "AES256"])
+def test_minio_endpoint_defaults_to_path_style_and_supports_sse(monkeypatch, sse):
+    from urllib.parse import urlparse
+    from botocore.stub import Stubber
+
+    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "test-access-key")
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "test-secret-key")
+    store = S3Store("documents", endpoint_url="http://127.0.0.1:9000", region="us-east-1",
+                    server_side_encryption=sse)
+    key = "11111111-1111-1111-1111-111111111111/2026/09/22222222-2222-2222-2222-222222222222/raw.pdf"
+    expected = {"Bucket": "documents", "Key": key, "Body": b"pdf", "ContentType": "application/pdf"}
+    if sse == "AES256":
+        expected["ServerSideEncryption"] = "AES256"
+    with Stubber(store.s3) as stub:
+        stub.add_response("put_object", {"ETag": '"test"'}, expected)
+        store.put(key, b"pdf", "application/pdf")
+        stub.assert_no_pending_responses()
+    assert urlparse(store.signed_url(key, 60)).path == f"/documents/{key}"
 
 
 def test_local_store_survives_long_paths(tmp_path):

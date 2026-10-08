@@ -74,17 +74,36 @@ class LocalStore:
 
 
 class S3Store:
-    """Any S3-compatible bucket (AWS S3, MinIO, R2). Bucket stays private; review UI gets presigned GETs."""
+    """Private S3-compatible bucket; review UI gets presigned GETs."""
 
-    def __init__(self, bucket: str, client=None):
+    def __init__(self, bucket: str, client=None, *, endpoint_url: str = "", region: str = "",
+                 addressing_style: str = "", server_side_encryption: str = "auto"):
         import boto3  # optional dependency: pip install finledger-platform[s3]
+        from botocore.config import Config
+
+        if addressing_style not in ("", "auto", "path", "virtual"):
+            raise ValueError("S3 addressing style must be auto, path, or virtual")
 
         self.bucket = bucket
-        self.s3 = client or boto3.client("s3")
+        self.server_side_encryption = (
+            "AES256" if not endpoint_url else None
+        ) if server_side_encryption == "auto" else server_side_encryption or None
+        options = {}
+        if endpoint_url:
+            options["endpoint_url"] = endpoint_url
+        if region:
+            options["region_name"] = region
+        style = addressing_style or ("path" if endpoint_url else "")
+        if style or endpoint_url:
+            options["config"] = Config(signature_version="s3v4", s3={"addressing_style": style})
+        self.s3 = client if client is not None else boto3.client("s3", **options)
 
     def put(self, key: str, data: bytes, mime: str) -> None:
         check_key(key)
-        self.s3.put_object(Bucket=self.bucket, Key=key, Body=data, ContentType=mime, ServerSideEncryption="AES256")
+        params = {"Bucket": self.bucket, "Key": key, "Body": data, "ContentType": mime}
+        if self.server_side_encryption:
+            params["ServerSideEncryption"] = self.server_side_encryption
+        self.s3.put_object(**params)
 
     def get(self, key: str) -> bytes:
         check_key(key)
@@ -100,5 +119,7 @@ class S3Store:
 
 def make_store(settings: Settings) -> LocalStore | S3Store:
     if settings.store == "s3":
-        return S3Store(settings.s3_bucket)
+        return S3Store(settings.s3_bucket, endpoint_url=settings.s3_endpoint_url,
+                       region=settings.s3_region, addressing_style=settings.s3_addressing_style,
+                       server_side_encryption=settings.s3_server_side_encryption)
     return LocalStore(settings.store_root, settings.signing_secret, settings.app_base_url)

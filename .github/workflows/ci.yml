@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - uses: astral-sh/setup-uv@v10.1.0
+        with:
+          version: '0.10.9'
+
+      - name: Install PostgreSQL test tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y postgresql
+          initdb_path="$(find /usr/lib/postgresql -maxdepth 2 -type f -name initdb -print -quit)"
+          test -n "$initdb_path"
+          echo "$(dirname "$initdb_path")" >> "$GITHUB_PATH"
+
+      - name: Sync Person2 dependencies
+        run: uv sync --project person2_platform --python 3.12 --locked --all-extras --dev
+
+      - name: Test Person1
+        env:
+          PYTHONPATH: packages:evals
+        run: |
+          person2_platform/.venv/bin/python -m pytest packages evals -q --basetemp=.pytest-person1
+          person2_platform/.venv/bin/python evals/run_evals.py --provider-mode mock
+
+      - name: Test Person2
+        env:
+          PYTHONPATH: person2_platform/src
+        run: person2_platform/.venv/bin/python -m pytest person2_platform/tests -q --basetemp=.pytest-person2
+
+      - name: Sync Person3 dependencies
+        run: uv sync --project person3_control_ui --python 3.12 --locked --dev
+
+      - name: Test Person3
+        env:
+          PYTHONPATH: person2_platform/src:person3_control_ui/src
+        run: person3_control_ui/.venv/bin/python -m pytest person3_control_ui/tests -q --basetemp=.pytest-person3

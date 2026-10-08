@@ -1,8 +1,10 @@
-"""finledger-platform migrate | create-firm | serve | worker"""
+"""finledger-platform migrate | create-firm | serve | worker | outbox-worker"""
 from __future__ import annotations
 
 import argparse
 import logging
+import os
+from uuid import UUID
 
 import psycopg
 
@@ -30,6 +32,8 @@ def main(argv: list[str] | None = None) -> None:
     sv.add_argument("--host", default="127.0.0.1")
     sv.add_argument("--port", type=int, default=8000)
     sub.add_parser("worker", help="run the ingest worker")
+    mail = sub.add_parser("outbox-worker", help="deliver one client's queued email replies")
+    mail.add_argument("--client-id", required=True, type=UUID)
     args = p.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 
@@ -57,6 +61,14 @@ def main(argv: list[str] | None = None) -> None:
 
         s = Settings()
         run_forever(make_pool(s.database_url, min_size=1, max_size=2), make_store(s), s)
+    elif args.cmd == "outbox-worker":
+        from .db import make_pool
+        from .outbox_worker import ResendSender, run_forever
+
+        sender = ResendSender(os.environ.get("RESEND_API_KEY", ""), os.environ.get("RESEND_FROM_EMAIL", ""))
+        s = Settings()
+        with make_pool(s.database_url, min_size=1, max_size=2) as pool:
+            run_forever(pool, args.client_id, sender)
 
 
 if __name__ == "__main__":

@@ -23,6 +23,10 @@ class Settings:
     store: str = field(default_factory=lambda: _env("FINLEDGER_STORE", "local"))  # local | s3
     store_root: str = field(default_factory=lambda: _env("FINLEDGER_STORE_ROOT", "./var/objects"))
     s3_bucket: str = field(default_factory=lambda: _env("FINLEDGER_S3_BUCKET", ""))
+    s3_endpoint_url: str = field(default_factory=lambda: _env("FINLEDGER_S3_ENDPOINT_URL", ""))
+    s3_region: str = field(default_factory=lambda: _env("FINLEDGER_S3_REGION", ""))
+    s3_addressing_style: str = field(default_factory=lambda: _env("FINLEDGER_S3_ADDRESSING_STYLE", ""))
+    s3_server_side_encryption: str = field(default_factory=lambda: _env("FINLEDGER_S3_SERVER_SIDE_ENCRYPTION", "auto"))
 
     inbound_domain: str = field(default_factory=lambda: _env("FINLEDGER_INBOUND_DOMAIN", "inbound.finledger.in"))
     inbound_webhook_secret: bytes = field(default_factory=lambda: _env("FINLEDGER_INBOUND_WEBHOOK_SECRET").encode())
