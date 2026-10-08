@@ -49,8 +49,11 @@ def owner_dsn():
     port = _free_port()
     subprocess.run([str(bindir / "initdb"), "-D", str(data), "-U", "postgres", "-A", "trust", "-E", "UTF8"],
                    check=True, capture_output=True)
+    options = f"-p {port} -c listen_addresses=127.0.0.1"
+    if os.name != "nt":
+        options += f" -c unix_socket_directories={data}"
     try:
-        subprocess.run([str(bindir / "pg_ctl"), "-D", str(data), "-o", f"-p {port} -c listen_addresses=127.0.0.1",
+        subprocess.run([str(bindir / "pg_ctl"), "-D", str(data), "-o", options,
                         "-l", str(data / "log.txt"), "-w", "start"], check=True,
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)  # pipes would be inherited by postgres and never close
     except subprocess.CalledProcessError as exc:
