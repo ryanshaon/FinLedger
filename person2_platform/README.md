@@ -120,3 +120,21 @@ Boots a throwaway Postgres with `initdb`, or uses `FINLEDGER_TEST_OWNER_DSN`. Th
 - A fleet-wide outbox scheduler with managed retries and dead-letter handling.
 - Vendor portal and WhatsApp doors: they are phase 9, and intake is channel-agnostic (`intake.accept`).
 - OCR: Person 1's vision path. P2 hands over page images for pages that have no text layer.
+
+## Containers and staging checks
+
+One image runs every process (built from the repo root `Dockerfile`):
+
+```bash
+docker compose up --build            # local Postgres + migrate + API :8000 + worker + control UI :8770
+docker compose --profile scan up     # also starts ClamAV for real virus scanning
+```
+
+Behind a TLS-intercepting proxy, pass its CA only at build time: `docker build --secret id=extra_ca,src=ca.pem .`
+
+Staging proofs (both write nothing that survives):
+
+```bash
+FINLEDGER_OWNER_DATABASE_URL=... finledger-platform isolation-check   # rollback-only two-tenant RLS proof
+FINLEDGER_STORE=s3 FINLEDGER_S3_BUCKET=... finledger-platform s3-smoke  # put/get/presign/delete one object
+```
