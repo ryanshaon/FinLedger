@@ -74,6 +74,46 @@ def render_mfa(csrf_token: str, factor_id: str = "", secret: str = "", error: st
                  f'<main class="shell" style="max-width:500px"><h1>Two-step verification</h1>{alert}{setup}{form}</main>')
 
 
+ROLE_LABELS = (("ap_clerk", "AP clerk"), ("approver", "Approver"), ("payer", "Payer"))
+
+
+def render_staff_invite(clients: list[dict], csrf_token: str, notice: str = "", error: str = "") -> str:
+    alert = f'<p role="alert" class="mark">{escape(error)}</p>' if error else ""
+    done = f'<p role="status" class="reason">{escape(notice)}</p>' if notice else ""
+    rows = ''.join(
+        f'<tr><td>{escape(c["name"])}</td>' + ''.join(
+            f'<td><input type="checkbox" name="membership" aria-label="{escape(label, quote=True)} for '
+            f'{escape(c["name"], quote=True)}" value="{escape(str(c["id"]), quote=True)}:{role}"></td>'
+            for role, label in ROLE_LABELS) + '</tr>' for c in clients)
+    heads = ''.join(f'<th>{label}</th>' for _, label in ROLE_LABELS)
+    table = (f'<table class="ledger"><thead><tr><th>Client</th>{heads}</tr></thead><tbody>{rows}</tbody></table>'
+             if clients else '<p class="meta">No clients yet. Firm admins see every client without memberships.</p>')
+    body = (f'<main class="shell" style="max-width:820px"><h1>Invite staff</h1>{alert}{done}'
+            f'<form method="post" action="/admin/staff/invite"><input type="hidden" name="csrf_token" '
+            f'value="{escape(csrf_token, quote=True)}">'
+            '<p><label>Work email<br><input name="email" type="email" required maxlength="254" autocomplete="off"></label></p>'
+            '<p><label>Name<br><input name="name" maxlength="200" autocomplete="off"></label></p>'
+            '<p><label><input type="checkbox" name="firm_admin" value="true" style="width:auto"> '
+            'Firm admin (every client, can invite staff)</label></p>'
+            f'{table}<p><button>Send invitation</button></p></form><p><a href="/">Back to clients</a></p></main>')
+    return _page("Invite staff · FinLedger", body)
+
+
+def render_accept_invite(csrf_token: str, token_hash: str, error: str = "") -> str:
+    alert = f'<p role="alert" class="mark">{escape(error)}</p>' if error else ""
+    body = (f'<main class="shell" style="max-width:480px"><h1>Set your password</h1>{alert}'
+            '<p>Choose a password of at least 12 characters. Next you will sign in and set up an authenticator app.</p>'
+            f'<form method="post" action="/auth/accept"><input type="hidden" name="csrf_token" '
+            f'value="{escape(csrf_token, quote=True)}"><input type="hidden" name="token_hash" '
+            f'value="{escape(token_hash, quote=True)}">'
+            '<p><label>New password<br><input name="password" type="password" autocomplete="new-password" '
+            'required minlength="12" maxlength="1024"></label></p>'
+            '<p><label>Repeat password<br><input name="password_confirm" type="password" autocomplete="new-password" '
+            'required minlength="12" maxlength="1024"></label></p>'
+            '<button type="submit">Set password</button></form></main>')
+    return _page("Set password · FinLedger", body)
+
+
 def render_inbox(items, counts, active, client_name):
     labels=(("new","New"),("needs_review","Needs review"),("approved","Approved"),("posted","Posted"),("exception","Exception"))
     tabs=''.join(f'<a class="{"active" if k==active else ""}" href="?queue={k}">{v}<span class="count">{counts.get(k,0)}</span></a>' for k,v in labels)

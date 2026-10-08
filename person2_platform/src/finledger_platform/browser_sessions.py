@@ -15,6 +15,9 @@ from .auth_gateway import AuthUnavailable
 from .supabase_auth import InvalidStaffToken
 
 
+MIN_PASSWORD_CHARS = 12
+
+
 class SessionDenied(ValueError):
     """No usable provisioned browser session; never includes credentials."""
 
@@ -81,6 +84,27 @@ class BrowserSessions:
                      (self._hash(cookie), staff["user_id"],
                       self._seal(tokens.access_token, tokens.refresh_token), verified.expires_at))
         return cookie
+
+    def accept_invite(self, conn, token_hash: str, password: str) -> None:
+        """First login: redeem the emailed invite, require an explicitly linked user, set a password, end the
+        temporary Auth session. No browser session is created; the person then signs in and enrolls TOTP."""
+        if not isinstance(password, str) or not MIN_PASSWORD_CHARS <= len(password) <= 1024:
+            raise SessionDenied("password does not meet policy")  # checked first so a typo never burns the link
+        try:
+            tokens = self._gateway.verify_invite(token_hash)
+            verified = self._verifier.verify_staff(tokens.access_token)
+        except (AuthUnavailable, InvalidStaffToken):
+            raise SessionDenied("invitation invalid or expired") from None
+        try:
+            self._staff(conn, verified.subject)  # linked by the invite flow only; never matched by email
+            self._gateway.set_password(tokens.access_token, password)
+        except AuthUnavailable:
+            raise SessionDenied("password could not be set") from None
+        finally:
+            try:
+                self._gateway.sign_out(tokens.access_token)
+            except AuthUnavailable:
+                pass
 
     def resolve(self, conn, cookie: str) -> StaffSession:
         digest = self._hash(cookie)

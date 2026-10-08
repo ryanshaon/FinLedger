@@ -9,13 +9,15 @@ from uuid import UUID
 from fastapi import Depends, FastAPI, Form, Header, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from finledger_platform.browser_sessions import SessionDenied
+from finledger_platform.browser_sessions import MIN_PASSWORD_CHARS, SessionDenied, StaffSession
 from finledger_platform.db import firm
+from finledger_platform.staff_invites import InviteConflict, InviteDenied, InviteInvalid, InviteUnavailable
 from .service import Conflict, ControlService, Forbidden, NotFound
-from .web import render_home, render_inbox, render_login, render_mfa, render_review
+from .web import (render_accept_invite, render_home, render_inbox, render_login, render_mfa, render_review,
+                  render_staff_invite)
 
 
-def create_app(pool, source_url=lambda path, name: "", browser_sessions=None) -> FastAPI:
+def create_app(pool, source_url=lambda path, name: "", browser_sessions=None, staff_invitations=None) -> FastAPI:
     app=FastAPI(title="FinLedger Control & Review", version="0.1.0")
 
     @app.middleware("http")
@@ -168,6 +170,91 @@ def create_app(pool, source_url=lambda path, name: "", browser_sessions=None) ->
             response.set_cookie(session_cookie_name(request),upgraded_cookie,httponly=True,
                                 secure=secure_browser(request),samesite="lax",path="/")
             return response
+
+        def login_csrf_page(request:Request,html:str,status:int=200,token:str|None=None)->HTMLResponse:
+            token=token or request.cookies.get("fl_login_csrf") or secrets.token_urlsafe(32)
+            response=HTMLResponse(html(token) if callable(html) else html,status_code=status,
+                                  headers={"Cache-Control":"no-store"})
+            response.set_cookie("fl_login_csrf",token,httponly=True,secure=secure_browser(request),
+                                samesite="strict",path="/")
+            return response
+
+        def invite_admin(who):
+            # Inviting grants access to client data: same AAL2 gate as every other browser page.
+            if who["aal"] != "aal2":
+                raise HTTPException(303,headers={"Location":"/mfa"})
+            if not who["firm_admin"]:
+                raise HTTPException(403,"Firm admin only")
+
+        def firm_clients(who):
+            with pool.connection() as conn, firm(conn,who["firm_id"]):
+                return conn.execute("select id,name from clients order by name").fetchall()
+
+        @app.get("/admin/staff",response_class=HTMLResponse)
+        def staff_invite_page(request:Request,who=Depends(user)):
+            invite_admin(who)
+            clients=firm_clients(who)
+            return login_csrf_page(request,lambda token: render_staff_invite(clients,token))
+
+        @app.post("/admin/staff/invite",response_class=HTMLResponse)
+        def staff_invite(request:Request,csrf_token:str=Form(...),email:str=Form(...,max_length=320),
+                         name:str=Form("",max_length=200),firm_admin:bool=Form(False),
+                         membership:list[str]=Form([]),who=Depends(user)):
+            verify_login_csrf(request,csrf_token)
+            invite_admin(who)
+            clients=firm_clients(who)
+            def page(status,notice="",error=""):
+                return login_csrf_page(request,render_staff_invite(clients,csrf_token,notice,error),status,csrf_token)
+            if staff_invitations is None:
+                return page(503,error="Invitations are not configured on this server.")
+            pairs=[]
+            for item in membership[:600]:
+                client_id,_,role=item.partition(":")
+                try: pairs.append((UUID(client_id),role))
+                except ValueError: return page(422,error="Choose clients from the list.")
+            actor=StaffSession(who["user_id"],who["firm_id"],who["firm_admin"],who["aal"])
+            try:
+                with pool.connection() as conn:
+                    result=staff_invitations.invite(conn,actor,email,name=name,firm_admin=firm_admin,
+                                                    memberships=pairs)
+            except InviteDenied:
+                raise HTTPException(403,"Firm admin with two-step verification required") from None
+            except InviteInvalid as exc:
+                return page(422,error=f"Invitation not sent: {exc}.")
+            except InviteConflict as exc:
+                return page(409,error=f"Invitation not sent: {exc}.")
+            except InviteUnavailable:
+                return page(503,error="Invitation could not be sent. Nothing was granted; try again shortly.")
+            verb="re-sent" if result.resent else "sent"
+            return page(201,notice=f"Invitation {verb} to {email.strip().lower()}.")
+
+        @app.get("/auth/accept",response_class=HTMLResponse)
+        def accept_invite_page(request:Request,token_hash:str=Query("",max_length=512),
+                               type:str=Query("",max_length=20)):
+            # GET never redeems the token: mail scanners prefetch links.
+            if type != "invite" or not token_hash:
+                return HTMLResponse(render_login(secrets.token_urlsafe(32),"This invitation link is incomplete."),
+                                    status_code=400,headers={"Cache-Control":"no-store"})
+            return login_csrf_page(request,lambda token: render_accept_invite(token,token_hash))
+
+        @app.post("/auth/accept",response_class=HTMLResponse)
+        def accept_invite(request:Request,csrf_token:str=Form(...),token_hash:str=Form(...,max_length=512),
+                          password:str=Form(...,max_length=1024),password_confirm:str=Form(...,max_length=1024)):
+            verify_login_csrf(request,csrf_token)
+            def retry(message):
+                return HTMLResponse(render_accept_invite(csrf_token,token_hash,message),status_code=400,
+                                    headers={"Cache-Control":"no-store"})
+            if len(password) < MIN_PASSWORD_CHARS:
+                return retry(f"Use at least {MIN_PASSWORD_CHARS} characters.")
+            if not secrets.compare_digest(password.encode(),password_confirm.encode()):
+                return retry("The two passwords do not match.")
+            try:
+                with pool.connection() as conn: browser_sessions.accept_invite(conn,token_hash,password)
+            except SessionDenied:
+                return HTMLResponse(render_login(csrf_token,"This invitation is invalid, expired or not provisioned. "
+                                                 "Ask your firm admin to invite you again."),
+                                    status_code=400,headers={"Cache-Control":"no-store"})
+            return RedirectResponse("/login",303,headers={"Cache-Control":"no-store"})
 
     @app.get("/healthz")
     def health(): return {"ok":True}

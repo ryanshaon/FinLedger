@@ -6,7 +6,7 @@ from uuid import uuid4
 import pytest
 from cryptography.fernet import Fernet
 
-from finledger_platform.auth_gateway import AuthTokens
+from finledger_platform.auth_gateway import AuthTokens, AuthUnavailable
 from finledger_platform.browser_sessions import BrowserSessions, SessionDenied
 from finledger_platform.supabase_auth import VerifiedStaffToken
 from finledger_platform.supabase_auth import InvalidStaffToken
@@ -112,3 +112,48 @@ def test_mfa_enrollment_and_verification_upgrade_only_same_identity(owner, conn,
     with pytest.raises(SessionDenied):
         sessions.resolve(conn, cookie)
     assert sessions.resolve(conn, upgraded).aal == "aal2"
+
+
+class InviteGateway(FakeGateway):
+    def __init__(self):
+        self.passwords, self.redeemed = [], []
+
+    def verify_invite(self, token_hash):
+        self.redeemed.append(token_hash)
+        return AuthTokens("invite-access", "invite-refresh", 900)
+
+    def set_password(self, token, password):
+        self.passwords.append((token, password))
+
+
+def test_accept_invite_requires_explicit_link_sets_password_and_creates_no_session(owner, conn, world):
+    verifier, gateway = FakeVerifier(), InviteGateway()
+    verifier.subject = uuid4()
+    sessions = BrowserSessions(gateway, verifier, Fernet.generate_key())
+
+    with pytest.raises(SessionDenied):
+        sessions.accept_invite(conn, "token-hash-0123456789", "short")
+    assert gateway.redeemed == []  # a weak password never burns the one-time link
+
+    with pytest.raises(SessionDenied):  # identity exists in Auth but nobody linked it: no email fallback
+        sessions.accept_invite(conn, "token-hash-0123456789", "correct horse battery")
+    assert gateway.passwords == [] and gateway.signed_out is True
+
+    owner.execute("update users set auth_subject = %s where id = %s", (verifier.subject, world.clerk))
+    gateway.signed_out = False
+    sessions.accept_invite(conn, "token-hash-0123456789", "correct horse battery")
+    assert gateway.passwords == [("invite-access", "correct horse battery")]
+    assert gateway.signed_out is True
+    assert owner.execute("select count(*) from finledger_private.staff_sessions").fetchone()[0] == 0
+
+
+def test_accept_invite_maps_upstream_failures_to_denial(owner, conn, world):
+    class Expired(InviteGateway):
+        def verify_invite(self, token_hash):
+            raise AuthUnavailable("expired")
+
+    verifier = FakeVerifier()
+    verifier.subject = uuid4()
+    with pytest.raises(SessionDenied):
+        BrowserSessions(Expired(), verifier, Fernet.generate_key()).accept_invite(
+            conn, "token-hash-0123456789", "correct horse battery")
