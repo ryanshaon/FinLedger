@@ -51,3 +51,27 @@ def test_rejects_missing_tokens_without_exposing_response():
     with pytest.raises(AuthUnavailable) as error:
         auth.sign_in("staff@example.test", "private-password")
     assert "secret-response" not in str(error.value)
+
+
+def test_totp_factor_enrollment_challenge_and_verify_contract():
+    calls = []
+
+    def transport(method, url, headers, body):
+        calls.append((method, url, headers, body))
+        if url.endswith("/user"):
+            return {"factors": [{"id": "11111111-1111-1111-1111-111111111111", "factor_type": "totp", "status": "verified"}]}
+        if url.endswith("/factors"):
+            return {"id": "22222222-2222-2222-2222-222222222222", "totp": {"secret": "TESTSECRET"}}
+        if url.endswith("/challenge"):
+            return {"id": "33333333-3333-3333-3333-333333333333"}
+        return {"access_token": "aal2-access", "refresh_token": "new-refresh", "expires_in": 900}
+
+    auth = SupabaseAuthClient("https://project.supabase.co", "publishable-test", transport=transport)
+    assert len(auth.verified_totp_factors("aal1-access")) == 1
+    factor, secret = auth.enroll_totp("aal1-access")
+    assert secret == "TESTSECRET"
+    challenge = auth.challenge_totp("aal1-access", factor)
+    assert auth.verify_totp("aal1-access", factor, challenge, "123456").access_token == "aal2-access"
+    assert calls[0][0] == "GET" and calls[0][1].endswith("/auth/v1/user")
+    assert calls[1][3] == {"factor_type": "totp"}
+    assert calls[3][3] == {"challenge_id": challenge, "code": "123456"}
