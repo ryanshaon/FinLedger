@@ -129,17 +129,32 @@ Gotchas:
 6. **Person 1**: audit recorded in `docs/audits/PERSON1_PRODUCTION_READINESS.md` (PR pending). Live provider,
    persistent RAG/usage/cap state, extract queue consumer and PII policy remain release blockers. Mock evals are
    not production AI readiness.
-7. **Performance**: Supabase advisor lists 27 unindexed foreign keys; index with real workload in mind. Don't drop
-   "unused" indexes on an empty DB.
+7. **Performance**: Supabase advisor now lists 28 unindexed foreign keys (the extra one is the new private
+   `staff_session_events.user_id` FK) and 13 “unused” indexes on this empty database. Prioritize indexes from
+   real query plans and FK delete/update costs; do not drop useful indexes based on zero-data statistics.
 
 ---
 
 ## Latest status
 
-**2026-10-08, Claude → ChatGPT.** `main` @ `1eb2bbd`, CI green, working tree clean on Windows and in cloud.
-Merged today: PR #1 (root-safe test harness, isolation-check, s3-smoke), PR #2 (Docker/compose, Person 3 RLS + S3
-fixes, auth design), PR #3 (migration 008 recovered verbatim from Supabase history), PR #5 (ChatGPT's unpushed JWT
-verifier from Windows + key_ops fix + Person 3 relock). The user is currently creating real Supabase S3 keys.
-Nothing half-done, no WIP branches.
+**2026-10-09, ChatGPT → Claude.** `main` @ `eb5315f` before this handover-only PR. Windows checkout was clean
+before the handover edit. PRs #7–#11 merged with green `test` and `image` CI:
+
+- #7: migration 009 private browser sessions; #8: Supabase Auth gateway and encrypted session backend; #9:
+  Person 3 login, logout, TOTP MFA, AAL2 gate and migration 010 atomic cookie rekey; #10: migration 011 aligning
+  Supabase and Python migration histories; #11: Person 1 production-readiness audit and hosted-mock fail-closed guard.
+- Fresh local verification: Person 1 `packages evals` **43 passed**; Person 2 **131 passed**; Person 3 **43 passed**.
+  The mock eval runner's 3/3 + 5/5 baseline was not rerun this session. Each PR's GitHub CI jobs were green.
+- Supabase staging `hxymklwqifwojziewtcv`: committed migrations **009, 010, 011 applied in order** after green PRs;
+  both migration histories now contain 001–011. `staff_sessions` and `staff_session_events` have RLS on, no direct
+  SELECT grants to API/app roles, and zero rows. Security advisor has only three intentional INFO no-policy items.
+  No identities, credentials or customer data were added. Performance advisor: 28 unindexed FKs; 13 unused-index
+  notices on an empty DB. No other Supabase changes.
+- Incomplete: real S3 smoke needs user-provided keys; Auth needs publishable/secret keys in server secret settings,
+  Supabase project Auth settings, verified sender domain, app role and hosting before staging E2E. Invite flow is
+  not implemented. Person 1 live provider, queue consumer, durable state and PII policy are release blockers;
+  see `docs/audits/PERSON1_PRODUCTION_READINESS.md`. No Person 4 files were edited.
+- No half-done code or WIP branch. Continue Open work in priority order. Treat all mock keys as placeholders and
+  never claim production readiness until these blockers are closed.
 
 <!-- Next agent: replace the paragraph above with your own status when you hand back. Keep it short and exact. -->
