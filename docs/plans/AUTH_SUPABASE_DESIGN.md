@@ -11,7 +11,7 @@ Status: **proposed, not implemented.** Scope: Person 2 API + Person 3 control UI
 | Person 4 site agent | Bearer agent token (`/agent/...`) | Fine, stays as is. |
 | Vendors | `/i/{public_token}` upload link + inbound email | Fine, no accounts by design. |
 
-Staging already has migration `008_supabase_auth_subject.sql` (`users.auth_subject uuid unique`). **That file is not in Git yet. Push it before building on this design.**
+Migration `008_supabase_auth_subject.sql` (in Git and on staging) adds `users.auth_subject uuid unique` and the private lookup `finledger_private.auth_user_by_subject(uuid)`: SECURITY DEFINER, `search_path = pg_catalog`, EXECUTE only for `finledger_app`.
 
 ## 2. Decision
 
@@ -34,7 +34,7 @@ Why not keep the reverse-proxy token injection? It pushes login, MFA and session
 
 ### 3.2 Every request
 1. Look up session by cookie → refresh with `grant_type=refresh_token` if the access token expires in < 60 s (Supabase rotates refresh tokens; store the new one).
-2. Verify JWT → `sub` → `select id, firm_id, firm_admin from users where auth_subject = $1` (a new SECURITY DEFINER lookup like `auth_user()`).
+2. Verify JWT → `sub` → `finledger_private.auth_user_by_subject(sub)` (from 008).
 3. Existing authorization continues unchanged: `user_client_roles()`, SoD rules, CSRF double-submit cookie (already in Person 3).
 
 ### 3.3 MFA
@@ -44,7 +44,7 @@ Why not keep the reverse-proxy token injection? It pushes login, MFA and session
 ### 3.4 Invites and first login (no public sign-up)
 - Turn **off** public sign-ups in Supabase Auth settings.
 - Firm admin invites `email` + roles → we create the `users` row (no `auth_subject`) and call Supabase **admin** invite (`/auth/v1/invite`), which needs the **secret/service-role key**. Only this one code path, in the API process, ever holds it.
-- First successful login: if `auth_subject` is null and the JWT's **verified** email matches the row → set `auth_subject = sub` (one time; unique constraint from 008 prevents double-binding). Afterwards email changes never re-bind.
+- **No automatic linking by email or JWT metadata** (the rule in 008). The invite response returns the new Supabase user id; the server stores it as `auth_subject` on the pre-created `users` row within the same firm-admin request. A login whose `sub` is unlinked gets "account not provisioned", never a fallback match. The unique constraint prevents one identity from binding to two users.
 
 ### 3.5 Sign-out and revocation
 - `POST /logout`: delete server session, call `/auth/v1/logout` (revokes refresh token).
@@ -57,7 +57,6 @@ Why not keep the reverse-proxy token injection? It pushes login, MFA and session
 
 ## 5. Data model changes (one new migration, `009_...`)
 - `sessions` table (server-only, RLS on, no policies, no API-role grants): id (hash of cookie value), user_id, refresh token **encrypted with `FINLEDGER_ENC_KEY`**, access token expiry, aal, created/last_seen, ip/user-agent.
-- `auth_subject_user(p_sub uuid)` SECURITY DEFINER lookup with fixed `search_path` (pattern of `auth_user()`).
 - Audit rows for login, MFA enrolment, failed login, logout.
 
 ## 6. Configuration
@@ -72,7 +71,7 @@ Why not keep the reverse-proxy token injection? It pushes login, MFA and session
 Supabase dashboard settings: disable sign-ups, Site URL + redirect allow-list = our domain, access-token expiry 900 s, enable TOTP MFA, custom SMTP (Resend, verified sender domain) for auth emails, leaked-password protection on.
 
 ## 7. Build order
-1. Push migration 008 from the machine that has it.
+1. ~~Migration 008~~ done.
 2. `009` sessions + lookup function + tests (local throwaway Postgres as today).
 3. JWT verifier module + unit tests with a locally generated JWKS (no network).
 4. Person 3 `/login`, `/logout`, `/mfa`, session middleware replacing the `Authorization` header dependency for browser routes; keep bearer for API routes.
