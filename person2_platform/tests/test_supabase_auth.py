@@ -49,6 +49,18 @@ def test_valid_staff_token_returns_only_subject_uuid():
     assert requested == [ISSUER + "/.well-known/jwks.json"]
 
 
+def test_verified_claims_expose_only_subject_assurance_and_expiry():
+    private, public_jwk = _key()
+    verifier = SupabaseStaffJWTVerifier(ISSUER, jwks_fetcher=lambda _: {"keys": [public_jwk]})
+    token = _token(private, aal="aal2", user_metadata={"firm_admin": True})
+
+    verified = verifier.verify_staff(token)
+    assert verified.subject == SUBJECT
+    assert verified.aal == "aal2"
+    assert verified.expires_at > datetime.now(timezone.utc)
+    assert not hasattr(verified, "user_metadata")
+
+
 @pytest.mark.parametrize(
     "changes",
     [
