@@ -13,6 +13,7 @@ dependencies = [
     "pdfplumber>=0.11",
     "pillow>=10",
     "cryptography>=43",
+    "PyJWT[crypto]>=2.10,<3",
 ]
 
 [project.optional-dependencies]
