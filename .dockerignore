@@ -1,0 +1,17 @@
+**/.venv
+**/__pycache__
+**/.pytest_cache
+**/.pytest-*
+**/.test-tmp
+**/.local-test-tmp
+**/var
+**/*.pyc
+.git
+.env
+**/.env
+person4_tally
+docs
+evals
+context
+prompts
+*.pdf

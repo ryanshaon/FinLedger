@@ -3,7 +3,7 @@
 Everything runs in ONE transaction on the owner connection that is always rolled back:
 seed two firms and two clients, switch to `finledger_app` with SET LOCAL ROLE, then check that reads and
 writes fail closed without tenant context and never cross a client or firm boundary. If the owner is not
-already a member of finledger_app, the membership is granted inside the same transaction, so the rollback
+allowed to SET ROLE finledger_app, that membership is granted inside the same transaction, so the rollback
 removes it too.
 
     finledger-platform isolation-check          # uses FINLEDGER_OWNER_DATABASE_URL
@@ -52,8 +52,9 @@ def run(owner_dsn: str) -> Report:
         try:
             with conn.transaction():
                 me = conn.execute("select current_user").fetchone()[0]
-                if not conn.execute("select pg_has_role(current_user, 'finledger_app', 'MEMBER')").fetchone()[0]:
-                    conn.execute(f'grant finledger_app to "{me}"')
+                # Supabase's `postgres` is an ADMIN member of roles it created but without SET, so test SET, not MEMBER.
+                if not conn.execute("select pg_has_role(current_user, 'finledger_app', 'SET')").fetchone()[0]:
+                    conn.execute(f'grant finledger_app to "{me}" with set true')
 
                 conn.execute("insert into firms (id, name) values (%s, %s), (%s, %s)", (f1, tag + "-f1", f2, tag + "-f2"))
                 conn.execute(
