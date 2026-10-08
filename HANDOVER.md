@@ -61,8 +61,9 @@ re-run exact counts after subsequent merges.
 
 - DB tests start a throwaway PostgreSQL via `initdb` (needs PostgreSQL on PATH). As root they run it as the
   `postgres` OS user automatically. On Windows the sandbox used to stall `initdb`: prefer CI or WSL.
-- `run_evals.py` rewrites the timestamp in `evals/latest_report.md`; `git checkout -- evals/latest_report.md` unless
-  you intend to commit a new report.
+- `run_evals.py` rewrites the timestamp in `evals/latest_report.md`; avoid running it just for a handover. If you
+  run it, either include the updated report intentionally or restore only that generated file after checking the
+  diff. Do not discard unrelated work.
 - If you change `person2_platform/pyproject.toml` dependencies, run `uv lock` in **both** `person2_platform` and
   `person3_control_ui` (Person 3 depends on Person 2), then `uv lock --check` both.
 
@@ -100,7 +101,7 @@ Gotchas:
 | Tenancy + RLS, queue, intake, storage, outbox worker | `person2_platform` | tested |
 | Supabase hardening 006/007 | migrations | applied on staging |
 | Auth subject link 008 | `migrations/008_supabase_auth_subject.sql` | applied on staging. Rule: **never auto-link by email/JWT metadata**; admin links explicitly |
-| Supabase JWT verifier + Auth/session backend | `finledger_platform/supabase_auth.py`, `auth_gateway.py`, `browser_sessions.py` | tested offline and with local Postgres; PR #7/#8 merged. Browser routes are on `handover/auth-ui`, not live on staging |
+| Supabase JWT verifier + Auth/session backend | `finledger_platform/supabase_auth.py`, `auth_gateway.py`, `browser_sessions.py` | tested offline and with local Postgres; PRs #7–#9 merged. Browser routes are on `main`, not deployed to staging |
 | Staging proof tools | `finledger-platform isolation-check`, `finledger-platform s3-smoke` | tested; s3-smoke never run against real Supabase (no valid keys yet) |
 | Runtime image + local stack | `Dockerfile`, `compose.yaml` | built and run: API + control UI healthy, worker up |
 | Control UI entry point | `finledger-control` | uses `make_pool` (RLS guard) and full S3 settings |
@@ -126,7 +127,7 @@ Gotchas:
    integration untested.
 5. **Hosting**: not provisioned. Recommendation: AWS ECS/Fargate in Mumbai, colocated with Supabase `ap-south-1`
    (Render is the simple alternative). Image is ready. Needs account + approval before paid resources.
-6. **Person 1**: audit recorded in `docs/audits/PERSON1_PRODUCTION_READINESS.md` (PR pending). Live provider,
+6. **Person 1**: audit recorded in `docs/audits/PERSON1_PRODUCTION_READINESS.md` (PR #11 merged). Live provider,
    persistent RAG/usage/cap state, extract queue consumer and PII policy remain release blockers. Mock evals are
    not production AI readiness.
 7. **Performance**: Supabase advisor now lists 28 unindexed foreign keys (the extra one is the new private
@@ -135,14 +136,84 @@ Gotchas:
 
 ---
 
+## Overnight autonomous run (2–3 hours; owner unavailable)
+
+This is the work order for Claude's next unattended session. **The Open work list above remains the product
+priority; this section selects the first items that can safely move without waking the owner.** Read this whole
+file and the linked design/audit before editing. Start from a clean, freshly pulled `main`; never use this
+handover branch as a code-development base after it is merged. If a prior branch or PR is already in flight,
+inspect it first and avoid duplicate work.
+
+### 0. Operating envelope (first 10 minutes)
+
+- `git switch main`, `git pull`, `git status --short --branch`; inspect current PRs and CI before branching.
+- Scope is Persons 1–3 only; never edit `person4_tally/`. Never print or commit `.env`, keys, tokens, passwords,
+  invoice content, or customer data. Do not create paid resources, real users, or send real invites/emails.
+- Every change gets a focused branch, PR, and green CI before merge. Do not push directly to `main`. If GitHub,
+  CI, or credentials are unavailable, push a clearly labeled WIP branch if possible and record the limitation;
+  never claim a change is merged or verified when it is not.
+- Never apply SQL to Supabase without committing the identical migration in the same session. For this run,
+  prefer **offline implementation/tests only**: do not change staging Auth settings, roles, data, or schemas
+  unless a reviewed migration and a non-destructive test plan make the change unambiguously safe.
+- Use the owner's settled decisions: password + TOTP MFA; SSO deferred; 8-hour maximum and 30-minute idle
+  browser sessions. Do not re-open those questions.
+
+### 1. Primary deliverable: safe staff invitation flow (roughly 90–120 minutes)
+
+Implement the remaining Person 2 invitation flow from `docs/plans/AUTH_SUPABASE_DESIGN.md` §3.4/§7 as a
+separate PR. Read `person2_platform/src/finledger_platform/{auth_gateway,supabase_auth,browser_sessions}.py`,
+the existing API/permission patterns and their tests first. Keep the secret/service-role key **server-side only**.
+The API must require a real firm-admin identity with AAL2, authorize within the correct firm, validate roles,
+explicitly bind the returned Auth subject to the intended `users` row, and never auto-link on email/JWT metadata.
+Handle duplicate invites, Auth failures, and DB failures without silently leaving a usable but unlinked account;
+document any compensating action that cannot be atomic across Supabase Auth and Postgres. Preserve bearer-token
+machine/agent paths and existing RLS boundaries. Use a fake Auth transport and local/ephemeral Postgres for tests;
+**do not call the live Supabase invite endpoint** or create a real identity while the owner sleeps.
+
+Acceptance: tests prove unauthorized and AAL1 callers are denied, cross-firm and role escalation are denied,
+the success path binds exactly one Auth subject, retries/duplicates are safe, and failures cannot grant access.
+Run Person 2 and Person 3 suites plus relevant Person 1 contracts. If the flow needs an unanswered policy choice
+or a real secret to finish, implement only the independently testable part, mark the PR/WIP accurately, and move
+to stage 2 without waiting for the owner.
+
+### 2. Secondary deliverable: Person 1 queue boundary (remaining time)
+
+After the invitation PR is green/merged—or if it becomes genuinely blocked—take the first safe slice of the
+P0 extract-consumer blocker in `docs/audits/PERSON1_PRODUCTION_READINESS.md`. Trace the existing `extract` job
+producer, queue claim/ack/retry/dead-letter semantics, Person 1 extraction contract, and tenant context before
+editing. Prefer a narrow, tested worker integration or contract tests that fail clearly until the real pipeline
+is wired. Do not turn on mock AI in staging/production, send invoices to a model provider, claim full extract →
+score → map E2E, or invent a PII/provider policy. Keep each independently verified slice in its own PR.
+
+If there is not enough time for safe code, deliver an exact implementation plan in the audit: entry points,
+data flow, required tenant isolation, retry/dead-letter behavior, test cases and unresolved decisions. Clearly
+label documentation-only output as such. Do not spend the night repeatedly polling blocked S3 keys, email domain,
+hosting, provider/PII approval, or app-role credentials. Do not blanket-create/drop indexes from the empty
+staging database's advisor notices.
+
+### 3. Verification and morning hand-back (reserve final 20–30 minutes)
+
+- Run the relevant commands under **How to verify**, record **actual** pass counts, and check GitHub `test` and
+  `image` jobs for every PR. A previous pass count is a baseline, not proof for a new change.
+- Review the diff for secrets, generated files, accidental Person 4 edits, unsafe SQL, and scope creep. Report
+  whether staging changed; if it did, list exact migration files and evidence. Never say “production ready.”
+- Update **Latest status** with PR links/branches, commits, actual test counts, what remains half-done and what
+  the owner must do. Commit and push this update via a PR too. Finish with a clean checkout on `main`; if work
+  remains unfinished, commit it on `wip/<topic>` with a `WIP:` message, push it and name it in the status.
+- If usage approaches 15% before the timebox ends, invoke the mandatory hand-back protocol above immediately.
+  Do not leave uncommitted files on the PC. A short, truthful handover beats an unverified last-minute feature.
+
+---
+
 ## Latest status
 
-**2026-10-09, ChatGPT → Claude.** `main` @ `eb5315f` before this handover-only PR. Windows checkout was clean
-before the handover edit. PRs #7–#11 merged with green `test` and `image` CI:
+**2026-10-09, ChatGPT → Claude (overnight brief).** `main` @ `11b11e6` before the overnight-brief PR. Windows
+checkout was clean before this handover edit. PRs #7–#12 merged with green `test` and `image` CI:
 
 - #7: migration 009 private browser sessions; #8: Supabase Auth gateway and encrypted session backend; #9:
   Person 3 login, logout, TOTP MFA, AAL2 gate and migration 010 atomic cookie rekey; #10: migration 011 aligning
-  Supabase and Python migration histories; #11: Person 1 production-readiness audit and hosted-mock fail-closed guard.
+  Supabase and Python migration histories; #11: Person 1 production-readiness audit and hosted-mock fail-closed
+  guard; #12: shared handover/status update.
 - Fresh local verification: Person 1 `packages evals` **43 passed**; Person 2 **131 passed**; Person 3 **43 passed**.
   The mock eval runner's 3/3 + 5/5 baseline was not rerun this session. Each PR's GitHub CI jobs were green.
 - Supabase staging `hxymklwqifwojziewtcv`: committed migrations **009, 010, 011 applied in order** after green PRs;
@@ -155,6 +226,7 @@ before the handover edit. PRs #7–#11 merged with green `test` and `image` CI:
   not implemented. Person 1 live provider, queue consumer, durable state and PII policy are release blockers;
   see `docs/audits/PERSON1_PRODUCTION_READINESS.md`. No Person 4 files were edited.
 - No half-done code or WIP branch. Continue Open work in priority order. Treat all mock keys as placeholders and
-  never claim production readiness until these blockers are closed.
+  never claim production readiness until these blockers are closed. For the owner's 2–3 hour unattended window,
+  execute the bounded **Overnight autonomous run** above and update this paragraph before handing back.
 
 <!-- Next agent: replace the paragraph above with your own status when you hand back. Keep it short and exact. -->
