@@ -1,31 +1,32 @@
-"""008: Supabase Auth subject -> staff user lookup is private, narrow, and explicit-link only."""
-from __future__ import annotations
+"""A verified Supabase subject resolves to exactly one provisioned FinLedger staff user."""
 
 from uuid import uuid4
 
 import psycopg
 import pytest
 
-from finledger_platform import tenancy
+
+def test_subject_lookup_requires_explicit_link_and_works_before_tenant_is_known(owner, conn, world):
+    subject = uuid4()
+    assert conn.execute(
+        "select * from finledger_private.auth_user_by_subject(%s)", (subject,)
+    ).fetchone() is None
+
+    owner.execute("update users set auth_subject = %s where id = %s", (subject, world.admin1))
+    row = conn.execute(
+        "select * from finledger_private.auth_user_by_subject(%s)", (subject,)
+    ).fetchone()
+    assert row == {"user_id": world.admin1, "firm_id": world.firm1, "firm_admin": True}
+    assert conn.execute(
+        "select * from finledger_private.auth_user_by_subject(%s)", (uuid4(),)
+    ).fetchone() is None
 
 
-def test_lookup_resolves_only_explicitly_linked_subject(owner, conn):
-    firm_id, user_id, _ = tenancy.create_firm_with_admin(owner, "Sharma & Co CAs", "admin@sharma.test")
-    sub = uuid4()
-    lookup = "select * from finledger_private.auth_user_by_subject(%s)"
-    assert conn.execute(lookup, (sub,)).fetchall() == []  # not linked yet: nothing, no email fallback
-    owner.execute("update users set auth_subject = %s where id = %s", (sub, user_id))
-    assert conn.execute(lookup, (sub,)).fetchall() == [{"user_id": user_id, "firm_id": firm_id, "firm_admin": True}]
-    assert conn.execute(lookup, (uuid4(),)).fetchall() == []
-
-
-def test_subject_links_to_at_most_one_user(owner):
-    _, u1, _ = tenancy.create_firm_with_admin(owner, "Firm One", "a@one.test")
-    _, u2, _ = tenancy.create_firm_with_admin(owner, "Firm Two", "b@two.test")
-    sub = uuid4()
-    owner.execute("update users set auth_subject = %s where id = %s", (sub, u1))
+def test_subject_cannot_be_linked_to_two_users(owner, world):
+    subject = uuid4()
+    owner.execute("update users set auth_subject = %s where id = %s", (subject, world.admin1))
     with pytest.raises(psycopg.errors.UniqueViolation):
-        owner.execute("update users set auth_subject = %s where id = %s", (sub, u2))
+        owner.execute("update users set auth_subject = %s where id = %s", (subject, world.admin2))
 
 
 def test_lookup_is_private_and_pinned(owner_dsn, app_dsn):
