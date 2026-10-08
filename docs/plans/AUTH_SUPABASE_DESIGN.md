@@ -1,12 +1,12 @@
 # Customer sign-in with Supabase Auth: design
 
-Status: **partially implemented.** Migration 008 is applied to staging; migration 009 is merged but has not been applied there. Migration 010 (atomic cookie replacement after MFA) and Person 3 browser routes are on `handover/auth-ui`, pending PR/CI. JWT verification and the server-side Auth/session foundation are merged. Invites, staging Auth configuration, and real-user E2E testing remain open. Scope: Person 2 API + Person 3 control UI. Person 4 untouched.
+Status: **partially implemented.** Migrations 008–011 are merged and applied to staging, with both migration trackers verified. JWT verification, server-owned sessions, and Person 3 login/MFA routes are merged with green CI. Invites, staging Auth configuration, hosting and real-user E2E testing remain open. Scope: Person 2 API + Person 3 control UI. Person 4 untouched.
 
 ## 1. Where we are today
 
 | Caller | How it authenticates now | Problem |
 |---|---|---|
-| Staff in a browser (Person 3 UI) | Legacy bearer token on main; server-side Supabase login/MFA is being added | Staging login is not live until migration 009, Auth settings and secrets are configured and E2E-tested. |
+| Staff in a browser (Person 3 UI) | Server-side Supabase password login, private sessions and TOTP MFA are implemented | Staging login is not live until Auth settings/secrets, a reachable runtime and a real-user E2E test are configured. |
 | Staff API / integrations | Bearer API token, sha256-hashed in `users.api_token_hash`, resolved by `auth_user()` | Fine for machines; not for people. |
 | Person 4 site agent | Bearer agent token (`/agent/...`) | Fine, stays as is. |
 | Vendors | `/i/{public_token}` upload link + inbound email | Fine, no accounts by design. |
@@ -59,7 +59,7 @@ Why not keep the reverse-proxy token injection? It pushes login, MFA and session
 ## 5. Data model changes (one new migration, `009_...`)
 - `finledger_private.staff_sessions` (migration 009, merged): SHA-256 cookie hash, user_id, Fernet-encrypted access and refresh tokens, access-token expiry, 30-minute idle and 8-hour absolute limits, compare-and-swap version. RLS on, no app/API table grants; narrow private SECURITY DEFINER functions only.
 - `finledger_private.staff_session_events` currently records session start and revocation. Failed-login and MFA audit events are still to be added.
-- Migration 010 adds `mfa_verified` audit events and the atomic cookie-rekey function. It is not yet applied to staging.
+- Migration 010 adds `mfa_verified` audit events and the atomic cookie-rekey function. Migration 011 aligns the two migration trackers. Both are applied to staging.
 
 ## 6. Configuration
 
@@ -74,9 +74,9 @@ Supabase dashboard settings: disable sign-ups, Site URL + redirect allow-list = 
 
 ## 7. Build order
 1. ~~Migration 008~~ done.
-2. ~~`009` sessions + lookup function + tests~~ merged in PR #7; **not yet applied to staging**.
+2. ~~`009` sessions + lookup function + tests~~ merged in PR #7 and applied to staging, followed by migrations 010 and 011.
 3. ~~JWT verifier module + unit tests~~ merged. Server-side Auth client and session manager merged in PR #8.
-4. Person 3 `/login`, `/logout`, `/mfa` and cookie-backed browser routes: implemented on `handover/auth-ui`, pending PR/CI. Legacy bearer remains for local development; staging/production fail startup without browser Auth config. All browser staff need AAL2 before client data.
+4. ~~Person 3 `/login`, `/logout`, `/mfa` and cookie-backed browser routes~~ merged in PR #9 with green CI. Legacy bearer remains for local development; staging/production fail startup without browser Auth config. All browser staff need AAL2 before client data.
 5. Invite endpoint (Person 2) behind firm-admin + aal2.
 6. Staging: configure the Supabase settings in section 6, create one test firm, run an end-to-end browser login (Playwright) including MFA.
 
