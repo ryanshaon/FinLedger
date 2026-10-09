@@ -100,10 +100,15 @@ finledger-platform s3-smoke
 - S3 proof writes synthetic bytes, verifies read/presigned access and unsigned-public denial, then attempts
   deletion in `finally`. Record the cleanup result; do not claim no object remains if cleanup failed. Resolve
   a leftover synthetic object explicitly, not by clearing a bucket.
-  Current proof limitations: it counts any unsigned HTTP status >=400 as denial, so a 429 or 5xx PASS
-  does not prove privacy. Require a verified private bucket and the expected authorization/not-found response
-  from the correct public-object endpoint. If the command raises, cleanup was attempted but the accumulated
-  report is not printed; an authorized operator must independently verify cleanup rather than assume success.
+  The proof accepts only unsigned HTTP 401, 403 or 404 as denial; bad requests, throttling and service failures
+  fail the check. These correspond to authorization/not-found categories in the
+  [Supabase storage error reference](https://supabase.com/docs/guides/storage/debugging/error-codes).
+  Require a verified private bucket and the correct public-object endpoint as well. Legacy deployments
+  returning HTTP 400 need explicit operator investigation; the tool does not infer privacy from that status.
+  Normal step exceptions produce fixed, credential-free failed labels and still return the cleanup report.
+  Cleanup failure includes only the generated synthetic object key for explicit operator recovery.
+  Interrupted processes or missing output still require independent cleanup verification. With no custom
+  endpoint configured, the public-object check is skipped; successful S3 roundtrip alone does not prove privacy.
 - Migrations 001–011 are already applied to the current Supabase staging project. Do not reapply or edit
   them. New SQL must be committed in the migrations directory and reviewed/tested before hosted execution.
 - Do not automate `create-firm` in captured agent output: that command prints a bearer API token. Owner-led

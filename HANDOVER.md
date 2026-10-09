@@ -168,7 +168,9 @@ Tick these off in order. An agent can help explain each step but must never see 
 | 6c | **Malformed control form inputs** | PR #21 integrated with green CI; four regression cases | none; no hosted changes |
 | 6d | **Browser cookie MFA assurance binding** | PR #22 integrated after independent review and green CI | none; no migration or hosted changes |
 | 6e | **Hosted antivirus configuration guard** | PR #25 integrated after green CI | none; no migration or hosted changes |
-| 6f | **Credential URL access-log privacy** | implemented and locally verified on `hardening/credential-url-logs`; CI pending | none; proxy logging remains operator configuration |
+| 6f | **Credential URL access-log privacy** | PR #26 integrated after green CI | none; proxy logging remains operator configuration |
+| 6g | **Signed-download validation and safe filenames** | implemented and locally verified on `hardening/storage-smoke-report`; CI pending | none; local-store boundary only |
+| 6h | **Storage smoke failure/report accuracy** | implemented and locally verified on `hardening/storage-smoke-report`; CI pending | no keys needed for code tests; live smoke still blocked |
 | 7 | **Performance:** 28 unindexed FKs, 13 "unused" indexes on an empty DB | do not act on zero-data advisor stats | real query plans |
 
 Owner decisions already answered (do not re-ask): password + TOTP MFA; SSO deferred; 8 h absolute / 30 min idle
@@ -206,6 +208,22 @@ every completed or WIP change. No uncommitted implementation may remain on the P
 ---
 
 ## Latest status
+
+**Storage boundary follow-up (2026-10-09):** `hardening/storage-smoke-report` contains signed-download
+validation and storage-proof report fixes. Fresh full suites: **266 platform / 55 control / 43 AI**;
+mock evaluations **3/3 + 5/5**. Signed-download worker confirmed **53 red / 14 passed** before its fix and
+**67 focused tests passed** after it; parent reviewed the patch, updated the old negative-TTL expiry fixture
+to clock advancement, and ran every suite. Malformed signatures/encodings/claims/keys/filenames now deny
+with 403 before storage reads; finite expiry must be strictly future, local issuance requires positive integer
+TTL, shared key checks reject trailing newlines, and Unicode/unsafe filename characters use encoded headers.
+S3 implementation is otherwise unchanged. Nine storage-proof regression failures were confirmed before
+fixed safe report handling; all **10** new proof cases pass with mocked S3, including real mock-object cleanup
+after uncertain acceptance and no exception canary in CLI output. Only 401/403/404 count as public denial;
+400/429/5xx do not. Legacy 400 responses require investigation, not an inferred privacy PASS. This is not a
+live smoke result. Independent scanner review found no actionable issue; PR #26 is integrated on main
+at `d1df56e` with green test/image CI. Current combined storage branch CI is pending. No hosted SQL/config,
+migrations, credentials, live provider/email/identity calls, or Person 4 edits. No uncommitted implementation
+will be left when handing back; unresolved owner decisions and real private setup remain as listed above.
 
 **Access-log privacy follow-up (2026-10-09):** `hardening/credential-url-logs` disables Uvicorn access logs
 in both built-in launchers because invitation/upload/download URLs contain credentials. Both launch-boundary
