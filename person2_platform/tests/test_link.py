@@ -180,7 +180,7 @@ def test_browser_gets_receipt_page(world, client):
     assert "RECEIVED" in r.text and "Acme Steel Pvt Ltd has your bill" in r.text and "notes.txt" in r.text
 
 
-def test_signed_raw_url(world, client, store):
+def test_signed_raw_url(world, client, store, monkeypatch):
     doc = send(client, world.a["public_token"], ("inv.pdf", invoice_pdf(), "application/pdf")).json()["received"][0]
     r = client.get(f"/clients/{world.a['id']}/documents/{doc['document_id']}/raw-url", headers=auth(world.clerk_token))
     url = r.json()["url"]
@@ -188,7 +188,11 @@ def test_signed_raw_url(world, client, store):
     assert got.status_code == 200 and got.content[:5] == b"%PDF-" and got.headers["content-type"] == "application/pdf"
     tampered = url[:-1] + ("0" if url[-1] != "0" else "1")
     assert client.get(tampered.replace("http://testserver", "")).status_code == 403
-    expired = store.signed_url(store.verify_token(url.rsplit("/", 1)[1])[0], ttl=-1)
+    import time
+
+    issued_at = time.time()
+    expired = store.signed_url(store.verify_token(url.rsplit("/", 1)[1])[0], ttl=1)
+    monkeypatch.setattr("finledger_platform.store.time.time", lambda: issued_at + 2)
     assert client.get(expired.replace("http://testserver", "")).status_code == 403
 
 

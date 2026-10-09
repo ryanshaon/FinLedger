@@ -250,8 +250,15 @@ def create_app(settings: Settings, pool, store) -> FastAPI:
         data = store.get(key)
         mime = {"pdf": "application/pdf", "png": "image/png", "jpg": "image/jpeg", "md": "text/markdown",
                 "json": "application/json"}.get(key.rsplit(".", 1)[-1], "application/octet-stream")
+        name = filename or key.rsplit("/", 1)[-1]
+        if all(32 <= ord(c) < 127 and c not in '"\\' for c in name):
+            disposition = f'inline; filename="{name}"'
+        else:
+            from urllib.parse import quote
+
+            disposition = "inline; filename*=UTF-8''" + quote(name, safe="")
         headers = {"Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff",
-                   "Content-Disposition": f'inline; filename="{filename or key.rsplit("/", 1)[-1]}"'}
+                   "Content-Disposition": disposition}
         return Response(data, media_type=mime, headers=headers)
 
     # ---------- staff ----------

@@ -5,6 +5,7 @@ import base64
 import hashlib
 import hmac
 import json
+import math
 import os
 import re
 import time
@@ -27,7 +28,7 @@ def object_key(client_id: UUID | str, document_id: UUID | str, received_at: date
 
 
 def check_key(key: str) -> None:
-    if not _KEY_RE.match(key) or ".." in key:
+    if not isinstance(key, str) or not _KEY_RE.fullmatch(key) or ".." in key:
         raise ValueError(f"object key must be client_id/yyyy/mm/doc_id/name, got {key!r}")
 
 
@@ -56,21 +57,43 @@ class LocalStore:
         return self._path(key).read_bytes()
 
     def signed_url(self, key: str, ttl: int = 300, filename: str = "") -> str:
+        """Issue a local URL with a positive integer TTL in seconds (no duration cap)."""
         check_key(key)
+        if isinstance(ttl, bool) or not isinstance(ttl, int) or ttl <= 0:
+            raise ValueError("local signed URL TTL must be a positive integer in seconds")
         body = base64.urlsafe_b64encode(json.dumps({"k": key, "e": int(time.time()) + ttl, "f": filename}).encode()).decode()
         sig = hmac.new(self.secret, body.encode(), hashlib.sha256).hexdigest()
         return f"{self.base_url}/files/{body}.{sig}"
 
     def verify_token(self, token: str) -> tuple[str, str] | None:
         """Return (key, filename) for a valid, unexpired token, else None."""
+        if not isinstance(token, str):
+            return None
         body, _, sig = token.rpartition(".")
-        good = hmac.new(self.secret, body.encode(), hashlib.sha256).hexdigest()
-        if not body or not hmac.compare_digest(sig, good):
+        if not body or not re.fullmatch(r"[0-9a-f]{64}", sig):
             return None
-        claims = json.loads(base64.urlsafe_b64decode(body))
-        if claims["e"] < time.time():
+        try:
+            encoded = body.encode("ascii")
+            good = hmac.new(self.secret, encoded, hashlib.sha256).hexdigest()
+            if not hmac.compare_digest(sig, good):
+                return None
+            claims = json.loads(base64.b64decode(encoded, altchars=b"-_", validate=True))
+            if not isinstance(claims, dict):
+                return None
+            expiry = claims.get("e")
+            # Python integers are finite; avoid float conversion of large valid integers.
+            if (isinstance(expiry, bool) or not isinstance(expiry, (int, float))
+                    or (isinstance(expiry, float) and not math.isfinite(expiry))
+                    or expiry <= time.time()):
+                return None
+            key, filename = claims.get("k"), claims.get("f", "")
+            check_key(key)
+            if not isinstance(filename, str):
+                return None
+            filename.encode("utf-8")  # reject lone surrogates before header construction
+        except (ValueError, RecursionError):
             return None
-        return claims["k"], claims.get("f", "")
+        return key, filename
 
 
 class S3Store:
