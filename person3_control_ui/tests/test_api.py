@@ -1,4 +1,5 @@
 from fastapi.testclient import TestClient
+import pytest
 
 from finledger_control.api import create_app
 from finledger_control.cli import browser_sessions_from_env
@@ -150,4 +151,37 @@ def test_firm_admin_cannot_list_clients_before_mfa(pool, world):
                 headers={"Origin": "http://testserver"}, follow_redirects=False)
     page = client.get("/", follow_redirects=False)
     assert page.status_code == 303 and page.headers["location"] == "/mfa"
+
+
+@pytest.mark.parametrize("route", ["login", "review"])
+@pytest.mark.parametrize("bad_input", ["unicode_csrf", "malformed_origin"])
+def test_malformed_csrf_inputs_are_rejected_without_server_errors(pool, conn, world, document, route, bad_input):
+    # Raw str comparison and unguarded URL parsing must not turn hostile inputs into 500s.
+    if route == "login":
+        client = TestClient(create_app(pool, browser_sessions=object()))
+        token = client.get("/login").cookies["fl_login_csrf"]
+        path = "/login"
+        headers = {"Origin": "http://testserver"}
+        data = {"email": "approver@sharma.test", "password": "pw", "csrf_token": token}
+    else:
+        svc = ControlService(conn)
+        svc.score(world["client"]["id"], document, canonical(document), world["clerk"])
+        svc.submit_draft(world["client"]["id"], document, draft(document), world["clerk"])
+        client = TestClient(create_app(pool))
+        headers = {"Authorization": f"Bearer {world['approver_token']}", "Origin": "http://testserver"}
+        base = f"/clients/{world['client']['id']}/review/{document}"
+        token = client.get(base, headers=headers).cookies["finledger_csrf"]
+        path = base + "/approve"
+        data = {"revision": 1, "post": "false", "csrf_token": token}
+    if bad_input == "unicode_csrf":
+        data["csrf_token"] = "\u2603"
+    else:
+        headers["Origin"] = "http://[broken"
+    response = client.post(path, headers=headers, data=data, follow_redirects=False)
+    assert response.status_code == 403
+    assert "set-cookie" not in response.headers
+    if route == "review":
+        with conn.transaction():
+            conn.execute("select set_config('app.client_id', %s, true)", (str(world["client"]["id"]),))
+            assert conn.execute("select count(*) as n from approvals where document_id=%s", (document,)).fetchone()["n"] == 0
 

@@ -64,23 +64,26 @@ def create_app(pool, source_url=lambda path, name: "", browser_sessions=None, st
         if isinstance(exc,Forbidden): return 403
         return 409
 
-    def verify_csrf(request: Request, csrf_token: str):
-        cookie=request.cookies.get("finledger_csrf")
-        if not cookie or not csrf_token or not secrets.compare_digest(cookie,csrf_token):
+    def verify_form_csrf(request: Request, csrf_token: str, cookie_name: str):
+        cookie=request.cookies.get(cookie_name)
+        # Generated tokens are ASCII. Reject malformed input before compare_digest, which
+        # raises TypeError for non-ASCII strings instead of returning a mismatch.
+        if (not cookie or not csrf_token or not cookie.isascii() or not csrf_token.isascii()
+                or not secrets.compare_digest(cookie,csrf_token)):
             raise HTTPException(403,"CSRF validation failed")
         source=request.headers.get("origin") or request.headers.get("referer")
-        parsed=urlsplit(source or "")
+        try:
+            parsed=urlsplit(source or "")
+        except ValueError:
+            raise HTTPException(403,"Untrusted request origin") from None
         if parsed.scheme != request.url.scheme or parsed.netloc != request.url.netloc:
             raise HTTPException(403,"Untrusted request origin")
 
+    def verify_csrf(request: Request, csrf_token: str):
+        verify_form_csrf(request,csrf_token,"finledger_csrf")
+
     def verify_login_csrf(request: Request, csrf_token: str):
-        cookie=request.cookies.get("fl_login_csrf")
-        if not cookie or not secrets.compare_digest(cookie, csrf_token):
-            raise HTTPException(403,"CSRF validation failed")
-        source=request.headers.get("origin") or request.headers.get("referer")
-        parsed=urlsplit(source or "")
-        if parsed.scheme != request.url.scheme or parsed.netloc != request.url.netloc:
-            raise HTTPException(403,"Untrusted request origin")
+        verify_form_csrf(request,csrf_token,"fl_login_csrf")
 
     if browser_sessions is not None:
         @app.get("/",response_class=HTMLResponse)
