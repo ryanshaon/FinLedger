@@ -56,7 +56,9 @@ def main(argv: list[str] | None = None) -> None:
         import uvicorn
 
         # proxy_headers: behind a load balancer, request.client.host becomes the real vendor IP for rate limits.
-        uvicorn.run("finledger_platform.cli:app", factory=True, host=args.host, port=args.port, proxy_headers=True)
+        # Invitation/upload/download URL paths contain credentials. Never write them to access logs.
+        uvicorn.run("finledger_platform.cli:app", factory=True, host=args.host, port=args.port,
+                    proxy_headers=True, access_log=False)
     elif args.cmd == "worker":
         from .db import make_pool
         from .store import make_store

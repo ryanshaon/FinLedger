@@ -35,7 +35,8 @@ One image supplies separate processes. Do not run a worker inside a web process.
 
 There is **no extract-worker command** yet. Starting ingest alone leaves jobs awaiting the missing consumer.
 The image's HTTP health check is for web processes; disable/replace it for workers, as local Compose does.
-`/healthz` only reports web-process liveness, not database or dependency readiness.
+Intake `/healthz` checks database connectivity with `SELECT 1`; Control UI `/healthz` checks process
+liveness only. Neither proves storage, scanner, email, Auth, schema compatibility or tenant isolation.
 
 Runtime rules:
 
@@ -58,6 +59,8 @@ Runtime rules:
 
 Do not publish raw request bodies or sensitive URL paths/query strings in access logs. Invite links,
 signed object URLs and vendor upload links contain credentials even though they are not labelled API keys.
+Both built-in CLI launchers disable Uvicorn access logging. A custom ASGI launch configuration must do the
+same or redact those URLs before logging; reverse-proxy/load-balancer logs require independent configuration.
 
 ## 3. Verification order
 
@@ -97,6 +100,10 @@ finledger-platform s3-smoke
 - S3 proof writes synthetic bytes, verifies read/presigned access and unsigned-public denial, then attempts
   deletion in `finally`. Record the cleanup result; do not claim no object remains if cleanup failed. Resolve
   a leftover synthetic object explicitly, not by clearing a bucket.
+  Current proof limitations: it counts any unsigned HTTP status >=400 as denial, so a 429 or 5xx PASS
+  does not prove privacy. Require a verified private bucket and the expected authorization/not-found response
+  from the correct public-object endpoint. If the command raises, cleanup was attempted but the accumulated
+  report is not printed; an authorized operator must independently verify cleanup rather than assume success.
 - Migrations 001–011 are already applied to the current Supabase staging project. Do not reapply or edit
   them. New SQL must be committed in the migrations directory and reviewed/tested before hosted execution.
 - Do not automate `create-firm` in captured agent output: that command prints a bearer API token. Owner-led

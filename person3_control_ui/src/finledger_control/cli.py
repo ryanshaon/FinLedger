@@ -53,4 +53,4 @@ def main():
     uvicorn.run(create_app(pool,source_url=lambda path,name: store.signed_url(path,300,name),
                            browser_sessions=browser_sessions_from_env(),
                            staff_invitations=staff_invitations_from_env()),
-                host=args.host,port=args.port,proxy_headers=True)
+                host=args.host,port=args.port,proxy_headers=True,access_log=False)

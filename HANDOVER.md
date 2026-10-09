@@ -167,7 +167,8 @@ Tick these off in order. An agent can help explain each step but must never see 
 | 6b | **Worker diagnostic sanitization** | implemented and verified in PR #18 | none; no hosted changes |
 | 6c | **Malformed control form inputs** | PR #21 integrated with green CI; four regression cases | none; no hosted changes |
 | 6d | **Browser cookie MFA assurance binding** | PR #22 integrated after independent review and green CI | none; no migration or hosted changes |
-| 6e | **Hosted antivirus configuration guard** | implemented and locally verified on `hardening/hosted-scanner-config`; CI pending | none; no migration or hosted changes |
+| 6e | **Hosted antivirus configuration guard** | PR #25 integrated after green CI | none; no migration or hosted changes |
+| 6f | **Credential URL access-log privacy** | implemented and locally verified on `hardening/credential-url-logs`; CI pending | none; proxy logging remains operator configuration |
 | 7 | **Performance:** 28 unindexed FKs, 13 "unused" indexes on an empty DB | do not act on zero-data advisor stats | real query plans |
 
 Owner decisions already answered (do not re-ask): password + TOTP MFA; SSO deferred; 8 h absolute / 30 min idle
@@ -206,12 +207,24 @@ every completed or WIP change. No uncommitted implementation may remain on the P
 
 ## Latest status
 
+**Access-log privacy follow-up (2026-10-09):** `hardening/credential-url-logs` disables Uvicorn access logs
+in both built-in launchers because invitation/upload/download URLs contain credentials. Both launch-boundary
+tests were confirmed failing first. Fresh complete local suites: **189 platform / 55 control / 43 AI**;
+mock evaluations **3/3 + 5/5**. Runbook corrected: Intake health checks `SELECT 1`, Control health is liveness;
+proxy/custom ASGI logs need independent redaction/disablement. S3 proof currently accepts 429/5xx as privacy
+denial and loses its accumulated cleanup report when a step raises; these limitations are explicitly recorded,
+not claimed fixed. Independent signed-download review found malformed credential/claim handling defects;
+a bounded implementation is in progress in `store.py`, the signed-download route and a new test file only.
+No hosted calls/SQL, migrations, secret changes or Person 4 edits. Local launcher path failures were repaired
+by locked offline reinstalls of project packages and both `.exe --help` commands then passed. PR #25 is on
+main at `11cdaf9` with green test/image CI; current logging branch review/CI is pending.
+
 **Scanner safety follow-up (2026-10-09):** `hardening/hosted-scanner-config` rejects EICAR-only mode in
 staging/production and rejects unknown scanner names in every environment before runtime startup.
 Four regression cases failed before implementation. Fresh complete local suites: Person 2 **188 passed**,
 Person 3 **54 passed**, Person 1 **43 passed**; mock evaluations **3/3 + 5/5**. Seven new scanner settings
 cases include local EICAR behavior and accepted hosted ClamAV settings without network calls. Existing
-Starlette deprecation warning remains. CI pending. No hosted configuration/SQL, migrations, credentials,
+Starlette deprecation warning remains. PR #25 test/image CI passed and was integrated. No hosted configuration/SQL, migrations, credentials,
 or Person 4 edits. Public signed-download handling and the runbook are receiving independent read-only
 reviews; no additional fix is yet claimed. Both console .exe wrappers failed locally with a uv trampoline
 path error; CLI help works via installed Python modules. Do not mistake that local launcher issue for a

@@ -19,8 +19,8 @@ remains the connector boundary and is represented by its architecture pack.
 | Seat | Status | Source | Validation |
 |---|---|---|
 | Person 1 | Prototype | `packages/`, `evals/` | 43 tests + deterministic fixture evaluation |
-| Person 2 | Implemented | `person2_platform/` | 188 tests |
-| Person 3 | Implemented | `person3_control_ui/` | 54 tests |
+| Person 2 | Implemented | `person2_platform/` | 189 tests |
+| Person 3 | Implemented | `person3_control_ui/` | 55 tests |
 | Person 4 | Planned | `person4_tally/` | Architecture only; no runnable connector |
 
 `Implemented` means runnable and integration-tested. `Prototype` means runnable
