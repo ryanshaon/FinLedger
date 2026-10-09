@@ -167,6 +167,7 @@ Tick these off in order. An agent can help explain each step but must never see 
 | 6b | **Worker diagnostic sanitization** | implemented and verified in PR #18 | none; no hosted changes |
 | 6c | **Malformed control form inputs** | PR #21 integrated with green CI; four regression cases | none; no hosted changes |
 | 6d | **Browser cookie MFA assurance binding** | PR #22 integrated after independent review and green CI | none; no migration or hosted changes |
+| 6e | **Hosted antivirus configuration guard** | implemented and locally verified on `hardening/hosted-scanner-config`; CI pending | none; no migration or hosted changes |
 | 7 | **Performance:** 28 unindexed FKs, 13 "unused" indexes on an empty DB | do not act on zero-data advisor stats | real query plans |
 
 Owner decisions already answered (do not re-ask): password + TOTP MFA; SSO deferred; 8 h absolute / 30 min idle
@@ -205,13 +206,25 @@ every completed or WIP change. No uncommitted implementation may remain on the P
 
 ## Latest status
 
+**Scanner safety follow-up (2026-10-09):** `hardening/hosted-scanner-config` rejects EICAR-only mode in
+staging/production and rejects unknown scanner names in every environment before runtime startup.
+Four regression cases failed before implementation. Fresh complete local suites: Person 2 **188 passed**,
+Person 3 **54 passed**, Person 1 **43 passed**; mock evaluations **3/3 + 5/5**. Seven new scanner settings
+cases include local EICAR behavior and accepted hosted ClamAV settings without network calls. Existing
+Starlette deprecation warning remains. CI pending. No hosted configuration/SQL, migrations, credentials,
+or Person 4 edits. Public signed-download handling and the runbook are receiving independent read-only
+reviews; no additional fix is yet claimed. Both console .exe wrappers failed locally with a uv trampoline
+path error; CLI help works via installed Python modules. Do not mistake that local launcher issue for a
+verified production image failure. Main currently includes the green-CI runbook PR #24 at `a781664`.
+
 **Deployment documentation follow-up (2026-10-09):** `handover/deployment-runbook` adds a release/recovery
 runbook based on the actual CLI, Docker/Compose, Auth and smoke-proof code. It documents release blockers,
 scanner profile/readiness, worker versus HTTP health, secret/log handling, real proof cleanup and safe
 rollback without down-migrations or blind mail replay. README now guards `.env` creation against overwrites.
 Documentation only; no new test counts claimed, hosted changes or Person 4 edits. Main was refreshed and
 unchanged at `8716a5e`; a new presence-only private configuration check still found S3, Supabase and Resend
-keys missing/placeholders. The owner decisions remain unanswered. Review/CI pending for this branch.
+keys missing/placeholders. The owner decisions remain unanswered. PR #24 test/image CI passed and the
+exact reviewed commit was integrated with a non-forced fast-forward; no deployment was performed.
 
 **Current follow-up (2026-10-09):** PR #20 documentation, PR #21 form hardening and PR #22 assurance binding
 were integrated after green test/image CI with non-forced fast-forwards and verified owner metadata.

@@ -41,6 +41,13 @@ class Settings:
     rate_per_ip_hour: int = field(default_factory=lambda: int(_env("FINLEDGER_RATE_PER_IP_HOUR", "60")))
     render_page_cap: int = field(default_factory=lambda: int(_env("FINLEDGER_RENDER_PAGE_CAP", "30")))
 
+    def __post_init__(self) -> None:
+        if self.virus_scanner not in ("clamd", "eicar"):
+            raise ValueError("virus scanner must be clamd or development-only eicar")
+        if (os.environ.get("FINLEDGER_ENV", "").strip().lower() in {"staging", "production"}
+                and self.virus_scanner != "clamd"):
+            raise ValueError("staging and production require the clamd virus scanner")
+
     def inbound_address(self, slug: str) -> str:
         return f"invoices.{slug}@{self.inbound_domain}"
 

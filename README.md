@@ -19,7 +19,7 @@ remains the connector boundary and is represented by its architecture pack.
 | Seat | Status | Source | Validation |
 |---|---|---|
 | Person 1 | Prototype | `packages/`, `evals/` | 43 tests + deterministic fixture evaluation |
-| Person 2 | Implemented | `person2_platform/` | 181 tests |
+| Person 2 | Implemented | `person2_platform/` | 188 tests |
 | Person 3 | Implemented | `person3_control_ui/` | 54 tests |
 | Person 4 | Planned | `person4_tally/` | Architecture only; no runnable connector |
 
@@ -35,6 +35,9 @@ and Person 4 remains to be built.
 - `uv` for the Person 1–3 dependency environments.
 - PostgreSQL tools (`initdb`, `pg_ctl`, `psql`) on `PATH` for integration tests.
 - EICAR scanner mode for local tests; `clamd` is required in production.
+
+Staging/production reject EICAR-only scanner configuration at settings construction.
+Unknown scanner names are rejected in all environments rather than silently selecting a backend.
 
 From this repository root, run the complete verification suite with:
 
