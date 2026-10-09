@@ -28,14 +28,25 @@ def clamd_scan(data: bytes, host: str, port: int, timeout: float = 30.0) -> str 
                 if not buf:
                     break
                 reply += buf
+                if len(reply) > 4096:
+                    raise ScannerError("invalid clamd response")
     except OSError as e:
         raise ScannerError(f"clamd unreachable at {host}:{port}: {e}") from e
-    text = reply.rstrip(b"\0").decode(errors="replace")  # "stream: OK" | "stream: Eicar-Signature FOUND"
-    if text.endswith("OK"):
+    if reply == b"stream: OK\0":
         return None
-    if text.endswith("FOUND"):
-        return text.split(":", 1)[1].rsplit(" ", 1)[0].strip()
-    raise ScannerError(f"clamd said: {text!r}")
+    if not reply.endswith(b"\0"):
+        raise ScannerError("invalid clamd response")
+    try:
+        text = reply[:-1].decode("utf-8")
+    except UnicodeDecodeError:
+        raise ScannerError("invalid clamd response") from None
+    if text.startswith("stream: ") and text.endswith(" FOUND"):
+        signature = text[len("stream: "):-len(" FOUND")]
+        if (signature and signature == signature.strip()
+                and all(ord(c) >= 32 and ord(c) != 127 for c in signature)):
+            return signature
+    # Never reflect an untrusted scanner reply (possibly document data) in diagnostics.
+    raise ScannerError("invalid clamd response")
 
 
 def eicar_scan(data: bytes) -> str | None:

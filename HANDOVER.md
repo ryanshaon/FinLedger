@@ -171,6 +171,7 @@ Tick these off in order. An agent can help explain each step but must never see 
 | 6f | **Credential URL access-log privacy** | PR #26 integrated after green CI | none; proxy logging remains operator configuration |
 | 6g | **Signed-download validation and safe filenames** | implemented and locally verified on `hardening/storage-smoke-report`; CI pending | none; local-store boundary only |
 | 6h | **Storage smoke failure/report accuracy** | implemented and locally verified on `hardening/storage-smoke-report`; CI pending | no keys needed for code tests; live smoke still blocked |
+| 6i | **Strict bounded scanner response validation** | implemented and locally verified on `hardening/scanner-response-validation`; CI pending | none; no migration or hosted changes |
 | 7 | **Performance:** 28 unindexed FKs, 13 "unused" indexes on an empty DB | do not act on zero-data advisor stats | real query plans |
 
 Owner decisions already answered (do not re-ask): password + TOTP MFA; SSO deferred; 8 h absolute / 30 min idle
@@ -208,6 +209,15 @@ every completed or WIP change. No uncommitted implementation may remain on the P
 ---
 
 ## Latest status
+
+**Scanner protocol follow-up (2026-10-09):** `hardening/scanner-response-validation` accepts only the exact
+NUL-terminated `stream: OK` reply as clean, validates framed/nonempty FOUND signatures and UTF-8, bounds
+responses to 4096 bytes and keeps malformed response data out of ScannerError diagnostics. Eight synthetic
+TCP cases were confirmed red before the fix. Fresh full suites: **274 platform / 55 control / 43 AI**;
+mock evaluations **3/3 + 5/5**. Existing valid OK/FOUND integration and retry/fail-closed tests still pass.
+Storage PR #27 CI is green on `082005b`; independent review pending before integration. Scanner branch CI
+pending. A separate bounded email-body/signature fix is being implemented only in the inbound route and
+new tests; it is not yet verified or committed. No hosted calls, migrations, credentials or Person 4 edits.
 
 **Storage boundary follow-up (2026-10-09):** `hardening/storage-smoke-report` contains signed-download
 validation and storage-proof report fixes. Fresh full suites: **266 platform / 55 control / 43 AI**;
