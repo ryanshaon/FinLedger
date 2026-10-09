@@ -40,6 +40,9 @@ Claude does the same in reverse when handing to you.
   Commit as the owner (`git config user.name ryanshaon`,
   `git config user.email 250547248+ryanshaon@users.noreply.github.com`). Check `git log -1 --format='%an <%ae>%n%b'`
   before every push.
+  GitHub squash defaults can change the author email and append owner co-author trailers. For future merges,
+  pass `--author-email 250547248+ryanshaon@users.noreply.github.com` and a reviewed `--body-file` explicitly,
+  then inspect the published commit as well. Never silently rewrite shared history to repair metadata.
 
 ## Repository
 
@@ -169,6 +172,12 @@ browser sessions, applied to all staff with AAL2 required before client data.
 them.** The remaining Open work items need credentials, configuration, an approved hosting account/budget,
 owner policy decisions, or real query plans. Start from current `main` and inspect the linked PRs before editing.
 
+**Metadata review pending:** `handover/owner-commit-metadata` proposes replacing only the two latest published
+commits with owner/noreply identity and no co-author trailers. Application files are identical to `main`
+`03ec760`; only this handover is additionally updated. Do not normally merge that proposal (a normal merge
+would retain the old commits). Do not replace `main` without explicit owner approval and green CI. The expected
+old remote tip is `03ec760f05b5c448302997362619f8e7ef692887`; use an exact lease if approved, and abort if it changed.
+
 1. If the owner has entered real S3 keys privately, run Open work 1 with the private staging bucket. Do not print
    environment contents or secret values. Record actual smoke-test results and cleanup; never claim it was run
    from a configuration-presence check.
@@ -189,13 +198,19 @@ every completed or WIP change. No uncommitted implementation may remain on the P
 
 ## Latest status
 
-**2026-10-09, completed packaging and worker diagnostics.** [PR #17](https://github.com/ryanshaon/FinLedger/pull/17)
-merged as `cc8b10b`; diagnostic work is delivered in [PR #18](https://github.com/ryanshaon/FinLedger/pull/18)
-on `handover/worker-safe-diagnostics`. Merge only after the final handover commit also has green CI.
+**2026-10-09, completed application work; metadata approval pending.**
+[PR #17](https://github.com/ryanshaon/FinLedger/pull/17) and
+[PR #18](https://github.com/ryanshaon/FinLedger/pull/18) merged with final green CI; published `main` is `03ec760`.
+The separate review branch `handover/owner-commit-metadata` repairs only the last two commits' identity/message
+metadata and updates this handover. No shared-history replacement has been performed.
 
 - Aligned the clean Windows checkout with rewritten history; retained the old tip only on the local archive
-  branch named in owner checklist 1. No user edits or `.env` were overwritten. Commits use the owner's identity
-  without AI attribution. The owner changed the low-usage hand-back threshold to **5% remaining**.
+  branch named in owner checklist 1. No user edits or `.env` were overwritten. Local commits use the owner's
+  noreply identity without attribution trailers. GitHub's squash defaults added **owner** co-author trailers
+  to PRs #17/#18; no AI identity was added, but these violate the literal no-trailer rule. Corrected candidate
+  commits are `d77b124` and `12c93c1`, with identical trees/dates and base `4256f6d`. The original tip is preserved
+  locally at `archive/pre-owner-metadata-correction-20261009`. The candidate is ready for review, not permission
+  to rewrite `main`. The owner changed the low-usage hand-back threshold to **5% remaining**.
 - Person 1 now ships as the `finledger-ai` wheel: all eight module groups, three prompt resources and six JSON
   Schemas, with a direct Pydantic dependency. Person 2 installs it; Person 3 inherits it. Both locks refreshed
   with no unrelated dependency upgrades. Docker installs it non-editably; CI tests no longer inject `packages`
