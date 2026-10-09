@@ -1,6 +1,7 @@
 """Browser session integration against the app role and a throwaway PostgreSQL cluster."""
 
 from datetime import datetime, timedelta, timezone
+import json
 from uuid import uuid4
 
 import pytest
@@ -70,14 +71,14 @@ def test_sign_in_requires_explicit_subject_link_and_stores_only_ciphertext(owner
         sessions.resolve(conn, cookie)
 
 
-def test_refresh_rotates_encrypted_tokens_and_assurance(owner, conn, world):
+def test_refresh_rotates_tokens_without_elevating_pre_mfa_cookie(owner, conn, world):
     verifier = FakeVerifier()
     verifier.subject = uuid4()
     owner.execute("update users set auth_subject = %s where id = %s", (verifier.subject, world.admin1))
     sessions = BrowserSessions(FakeGateway(), verifier, Fernet.generate_key())
     cookie = sessions.sign_in(conn, "admin@sharma.test", "password")
     owner.execute("update finledger_private.staff_sessions set access_expires_at = now() + interval '20 seconds'")
-    assert sessions.resolve(conn, cookie).aal == "aal2"
+    assert sessions.resolve(conn, cookie).aal == "aal1"
     assert owner.execute("select version from finledger_private.staff_sessions").fetchone()[0] == 2
 
 
@@ -96,7 +97,57 @@ def test_expired_access_token_is_refreshed_before_verification(owner, conn, worl
     cookie = sessions.sign_in(conn, "admin@sharma.test", "password")
     owner.execute("update finledger_private.staff_sessions set access_expires_at = now() - interval '1 second'")
     expired[0] = True
-    assert sessions.resolve(conn, cookie).aal == "aal2"
+    assert sessions.resolve(conn, cookie).aal == "aal1"
+
+
+def test_lost_mfa_upgrade_race_cannot_elevate_original_cookie_on_refresh(owner, conn, world):
+    verifier = FakeVerifier()
+    verifier.subject = uuid4()
+    owner.execute("update users set auth_subject = %s where id = %s", (verifier.subject, world.admin1))
+
+    class RacingGateway(FakeGateway):
+        def verify_totp(self, token, factor, challenge, code):
+            result = super().verify_totp(token, factor, challenge, code)
+            # A real concurrent session rotation invalidates the version captured before upstream MFA.
+            owner.execute("update finledger_private.staff_sessions set version=version+1")
+            return result
+
+    sessions = BrowserSessions(RacingGateway(), verifier, Fernet.generate_key())
+    cookie = sessions.sign_in(conn, "admin@sharma.test", "password")
+    with pytest.raises(SessionDenied, match="session changed"):
+        sessions.mfa_verify(conn, cookie, "11111111-1111-1111-1111-111111111111", "123456")
+    owner.execute("update finledger_private.staff_sessions set access_expires_at = now() - interval '1 second'")
+    assert sessions.resolve(conn, cookie).aal == "aal1"
+    assert sessions.resolve(conn, cookie).aal == "aal1"  # stored refreshed AAL2 must not elevate either
+    assert owner.execute("select count(*) from finledger_private.staff_session_events "
+                         "where event='mfa_verified'").fetchone()[0] == 0
+
+
+def test_legacy_credential_bundle_requires_local_mfa_even_with_aal2_token(owner, conn, world):
+    verifier = FakeVerifier()
+    verifier.subject = uuid4()
+    owner.execute("update users set auth_subject = %s where id = %s", (verifier.subject, world.admin1))
+    key = Fernet.generate_key()
+    sessions = BrowserSessions(FakeGateway(), verifier, key)
+    cookie = sessions.sign_in(conn, "admin@sharma.test", "password")
+    old_bundle = Fernet(key).encrypt(json.dumps({"access": "fresh-access", "refresh": "fresh-refresh"}).encode())
+    owner.execute("update finledger_private.staff_sessions set credential_ciphertext=%s", (old_bundle,))
+    assert sessions.resolve(conn, cookie).aal == "aal1"
+
+
+@pytest.mark.parametrize("invalid_assurance", ["aal3", ["aal2"]])
+def test_invalid_local_assurance_bundle_is_denied(owner, conn, world, invalid_assurance):
+    verifier = FakeVerifier()
+    verifier.subject = uuid4()
+    owner.execute("update users set auth_subject = %s where id = %s", (verifier.subject, world.admin1))
+    key = Fernet.generate_key()
+    sessions = BrowserSessions(FakeGateway(), verifier, key)
+    cookie = sessions.sign_in(conn, "admin@sharma.test", "password")
+    bundle = Fernet(key).encrypt(json.dumps({"access": "fresh-access", "refresh": "fresh-refresh",
+                                           "local_aal": invalid_assurance}).encode())
+    owner.execute("update finledger_private.staff_sessions set credential_ciphertext=%s", (bundle,))
+    with pytest.raises(SessionDenied):
+        sessions.resolve(conn, cookie)
 
 
 def test_mfa_enrollment_and_verification_upgrade_only_same_identity(owner, conn, world):
@@ -112,6 +163,9 @@ def test_mfa_enrollment_and_verification_upgrade_only_same_identity(owner, conn,
     with pytest.raises(SessionDenied):
         sessions.resolve(conn, cookie)
     assert sessions.resolve(conn, upgraded).aal == "aal2"
+    owner.execute("update finledger_private.staff_sessions set access_expires_at = now() - interval '1 second'")
+    assert sessions.resolve(conn, upgraded).aal == "aal2"
+    assert sessions.resolve(conn, upgraded).aal == "aal2"  # persistence through rotation, not one response
 
 
 class InviteGateway(FakeGateway):

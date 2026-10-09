@@ -43,6 +43,10 @@ Claude does the same in reverse when handing to you.
   GitHub squash defaults can change the author email and append owner co-author trailers. For future merges,
   pass `--author-email 250547248+ryanshaon@users.noreply.github.com` and a reviewed `--body-file` explicitly,
   then inspect the published commit as well. Never silently rewrite shared history to repair metadata.
+  The GitHub squash endpoint rejected that noreply override on PR #20. A safe alternative used for PRs
+  #20/#21 is a **non-forced fast-forward** of the exact reviewed branch after all PR checks pass; this
+  preserves the already-verified commit identity/message. Abort if it is not a fast-forward. GitHub
+  subsequently marks the PR merged. Never use a force push as a routine PR integration method.
 
 ## Repository
 
@@ -161,6 +165,8 @@ Tick these off in order. An agent can help explain each step but must never see 
 | 6 | **Person 1 release blockers:** live provider, extract queue consumer, persistent RAG/usage/cap state, PII policy | plan in the audit (documentation only) | owner checklist 5 (except 6a below) |
 | 6a | **Package Person 1 into the runtime image** | implemented and verified in PR #17 | none; no provider or consumer added |
 | 6b | **Worker diagnostic sanitization** | implemented and verified in PR #18 | none; no hosted changes |
+| 6c | **Malformed control form inputs** | PR #21 integrated with green CI; four regression cases | none; no hosted changes |
+| 6d | **Browser cookie MFA assurance binding** | implemented locally on `hardening/browser-assurance-binding`; review/CI pending | no owner decision; no migration |
 | 7 | **Performance:** 28 unindexed FKs, 13 "unused" indexes on an empty DB | do not act on zero-data advisor stats | real query plans |
 
 Owner decisions already answered (do not re-ask): password + TOTP MFA; SSO deferred; 8 h absolute / 30 min idle
@@ -198,6 +204,19 @@ every completed or WIP change. No uncommitted implementation may remain on the P
 ---
 
 ## Latest status
+
+**Current follow-up (2026-10-09):** PR #20 documentation and PR #21 form hardening were integrated after
+green test/image CI with non-forced fast-forwards and verified owner metadata. Main is `fdffb2d` at this
+checkpoint. Malformed non-ASCII CSRF values and invalid origin URLs now return 403 instead of crashing;
+all four cases failed before the fix. A session review reproduced an MFA race against temporary local
+Postgres: upstream verification succeeds, a concurrent version change blocks local cookie rekey, and
+refresh previously elevated the old cookie. The fix on `hardening/browser-assurance-binding` encrypts
+local cookie assurance, preserves it through refresh, and grants AAL2 only after successful local rekey
+and a verified AAL2 JWT. Legacy bundles require MFA again; malformed markers are denied. Six assertions
+failed before the fix. Fresh full local suites: Person 1 **43 passed**, mock evals **3/3 + 5/5**; Person 2
+**181 passed**; Person 3 **54 passed**. Existing Starlette deprecation warning remains. Assurance review
+and CI are pending at this checkpoint. No hosted calls/SQL, migrations, credentials, or Person 4 edits.
+The owner inputs in the checklist are still unanswered; do not guess them.
 
 **2026-10-09, completed application work and owner-approved metadata correction.**
 [PR #17](https://github.com/ryanshaon/FinLedger/pull/17) and

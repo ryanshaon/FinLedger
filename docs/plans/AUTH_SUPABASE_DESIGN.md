@@ -41,6 +41,10 @@ Why not keep the reverse-proxy token injection? It pushes login, MFA and session
 - Browser staff must have `aal2` (verified TOTP) in the JWT `aal` claim before seeing client data; otherwise redirect to `/mfa`. This is stricter than the initial firm-admin/approver/payer minimum and matches the owner's password-plus-TOTP decision.
 - Enrolment/challenge via `/auth/v1/factors` endpoints, server-side, using the user's own access token.
 - Successful verification atomically replaces the AAL1 cookie hash with a new random cookie hash (migration 010), preserving the original absolute expiry.
+- The encrypted credential bundle also records **local cookie assurance**. Sign-in begins at AAL1 even if
+  an upstream token is AAL2; only successful local cookie replacement records AAL2. Refresh preserves this
+  marker and cannot elevate a pre-MFA cookie, including after a lost upgrade race. Access requires both
+  local AAL2 and verified JWT AAL2. Legacy bundles without the marker require MFA again; no migration is needed.
 
 ### 3.4 Invites and first login (no public sign-up)
 - Turn **off** public sign-ups in Supabase Auth settings.

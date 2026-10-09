@@ -47,13 +47,19 @@ class BrowserSessions:
         except UnicodeEncodeError:
             raise SessionDenied("session unavailable") from None
 
-    def _seal(self, access: str, refresh: str) -> bytes:
-        return self._cipher.encrypt(json.dumps({"access": access, "refresh": refresh}).encode())
+    def _seal(self, access: str, refresh: str, local_aal: str = "aal1") -> bytes:
+        # Assurance belongs to this opaque cookie, not just the upstream Auth session.
+        return self._cipher.encrypt(json.dumps({"access": access, "refresh": refresh,
+                                               "local_aal": local_aal}).encode())
 
     def _open(self, value: bytes) -> dict:
         try:
             data = json.loads(self._cipher.decrypt(value))
             if not isinstance(data["access"], str) or not isinstance(data["refresh"], str):
+                raise ValueError("bad credential bundle")
+            # Legacy bundles have no proof of a local cookie-rekey; require MFA again.
+            data.setdefault("local_aal", "aal1")
+            if data["local_aal"] not in ("aal1", "aal2"):
                 raise ValueError("bad credential bundle")
             return data
         except (InvalidToken, ValueError, KeyError, TypeError):
@@ -117,7 +123,8 @@ class BrowserSessions:
                 tokens = self._gateway.refresh(bundle["refresh"])
                 verified = self._verifier.verify_staff(tokens.access_token)
                 if not conn.execute("select finledger_private.staff_session_rotate(%s, %s, %s, %s) as ok",
-                                    (digest, row["version"], self._seal(tokens.access_token, tokens.refresh_token),
+                                    (digest, row["version"], self._seal(tokens.access_token, tokens.refresh_token,
+                                                                       bundle["local_aal"]),
                                      verified.expires_at)).fetchone()["ok"]:
                     raise SessionDenied("session changed; retry")
             else:
@@ -125,7 +132,8 @@ class BrowserSessions:
             staff = self._staff(conn, verified.subject)
             if staff["user_id"] != row["user_id"]:
                 raise SessionDenied("session identity changed")
-            return StaffSession(staff["user_id"], staff["firm_id"], staff["firm_admin"], verified.aal)
+            aal = "aal2" if bundle["local_aal"] == "aal2" and verified.aal == "aal2" else "aal1"
+            return StaffSession(staff["user_id"], staff["firm_id"], staff["firm_admin"], aal)
         except (AuthUnavailable, InvalidStaffToken):
             raise SessionDenied("session unavailable") from None
 
@@ -175,7 +183,7 @@ class BrowserSessions:
             upgraded_cookie = secrets.token_urlsafe(32)
             ok = conn.execute("select finledger_private.staff_session_upgrade(%s, %s, %s, %s, %s) as ok",
                               (digest, self._hash(upgraded_cookie), row["version"],
-                               self._seal(tokens.access_token, tokens.refresh_token),
+                               self._seal(tokens.access_token, tokens.refresh_token, "aal2"),
                                verified.expires_at)).fetchone()["ok"]
             if not ok:
                 raise SessionDenied("session changed; retry")
