@@ -118,7 +118,9 @@ Gotchas:
    - Person 3 `/login`, `/logout`, `/mfa`, and cookie-backed browser routes are merged in PR #9; keep bearer
      tokens for API/agent routes. Local P2 131 passed and P3 43 passed; staging Auth secrets/settings, real-user
      E2E, and hosting remain open.
-   - invite endpoint (firm admin + aal2), which sets `auth_subject` explicitly
+   - Invite + first-login password set: **implemented in PR #15** (offline-tested, fake Auth). Before live use
+     the owner must do the Supabase setup listed in `docs/plans/AUTH_SUPABASE_DESIGN.md` §3.4 (secret key in
+     server settings, Invite email template link, Site URL, sign-ups off).
    - **Owner decisions answered:** password + TOTP MFA; defer SSO; 8 h absolute and 30 min idle browser sessions.
      The implementation gates all browser staff on AAL2 and applies the stricter timeouts to all staff.
 3. **App login role on staging** (`fl_app` or similar, member of `finledger_app` + worker roles), password chosen
@@ -129,7 +131,9 @@ Gotchas:
    (Render is the simple alternative). Image is ready. Needs account + approval before paid resources.
 6. **Person 1**: audit recorded in `docs/audits/PERSON1_PRODUCTION_READINESS.md` (PR #11 merged). Live provider,
    persistent RAG/usage/cap state, extract queue consumer and PII policy remain release blockers. Mock evals are
-   not production AI readiness.
+   not production AI readiness. The audit now has a **documentation-only** extract-consumer plan with three owner
+   decisions: a system maker identity for automated scoring, provider/PII data flow, and statement handling.
+   Packaging `packages/` into the runtime image is a prerequisite that needs no policy decision.
 7. **Windows `.env` (reminder for ChatGPT/Codex, next session on the PC):** the owner created real Supabase S3 keys
    and put them only in the Claude cloud environment settings. The Windows checkout has **no `.env`** yet. Help the
    owner run `Copy-Item .env.example .env; notepad .env` and add `FINLEDGER_STORE=s3`,
@@ -214,26 +218,29 @@ staging database's advisor notices.
 
 ## Latest status
 
-**2026-10-09, ChatGPT → Claude (overnight brief).** `main` @ `11b11e6` before the overnight-brief PR. Windows
-checkout was clean before this handover edit. PRs #7–#12 merged with green `test` and `image` CI:
+**2026-10-09, Claude overnight run → next agent.**
 
-- #7: migration 009 private browser sessions; #8: Supabase Auth gateway and encrypted session backend; #9:
-  Person 3 login, logout, TOTP MFA, AAL2 gate and migration 010 atomic cookie rekey; #10: migration 011 aligning
-  Supabase and Python migration histories; #11: Person 1 production-readiness audit and hosted-mock fail-closed
-  guard; #12: shared handover/status update.
-- Fresh local verification: Person 1 `packages evals` **43 passed**; Person 2 **131 passed**; Person 3 **43 passed**.
-  The mock eval runner's 3/3 + 5/5 baseline was not rerun this session. Each PR's GitHub CI jobs were green.
-- Supabase staging `hxymklwqifwojziewtcv`: committed migrations **009, 010, 011 applied in order** after green PRs;
-  both migration histories now contain 001–011. `staff_sessions` and `staff_session_events` have RLS on, no direct
-  SELECT grants to API/app roles, and zero rows. Security advisor has only three intentional INFO no-policy items.
-  No identities, credentials or customer data were added. Performance advisor: 28 unindexed FKs; 13 unused-index
-  notices on an empty DB. No other Supabase changes.
-- Incomplete: real S3 smoke needs user-provided keys; Auth needs publishable/secret keys in server secret settings,
-  Supabase project Auth settings, verified sender domain, app role and hosting before staging E2E. Invite flow is
-  not implemented. Person 1 live provider, queue consumer, durable state and PII policy are release blockers;
-  see `docs/audits/PERSON1_PRODUCTION_READINESS.md`. No Person 4 files were edited.
-- No half-done code or WIP branch. Continue Open work in priority order. Treat all mock keys as placeholders and
-  never claim production readiness until these blockers are closed. For the owner's 2–3 hour unattended window,
-  execute the bounded **Overnight autonomous run** above and update this paragraph before handing back.
+- ⚠️ **`main` history was rewritten at the owner's request** to remove Claude as a commit author/co-author. Every
+  commit ID changed (old tip `8c0aceb` → new tip `a8876ac`). The file tree is identical. The Windows checkout must
+  run `git fetch origin` then `git reset --hard origin/main` (commit or stash local work first). Old remote
+  branches (`claude/cloud-session-h52oob`, `handover/*`) still point at pre-rewrite commits; they are merged and
+  can be deleted. **Owner rule: never add `Co-authored-by`/`Claude-Session` lines or a Claude author identity to
+  commits or PR text in this repo.**
+- PR #15 (branch `claude/lucid-faraday-oruuq9`, not merged; the owner reviews and merges): staff invitations
+  (firm admin + AAL2, re-checked in the DB) and first-login password set. Design and owner setup are in
+  `AUTH_SUPABASE_DESIGN.md` §3.4. Fail-closed order: unlinked pending row → Supabase invite → compare-and-set link,
+  with compensation that never deletes a linked identity. API-token accounts and other firms' emails are never
+  linked by email. Routes live in Person 3 because only the browser session carries `aal`.
+- Local verification (PostgreSQL 16, non-owner `fl_app`): Person 1 `packages evals` **43 passed**; mock evals
+  3/3 + 5/5 (generated report restored, not committed); Person 2 **166 passed** (was 131); Person 3 **50 passed**
+  (was 43). PR #15 `test` job green; `image` green on the first run.
+- Stage 2 (Person 1 extract consumer): **documentation only.** The plan is appended to
+  `docs/audits/PERSON1_PRODUCTION_READINESS.md`. No consumer code was written, because the image lacks `packages/`
+  and system-maker, PII/provider and statement decisions are open.
+- **Supabase staging was not touched.** No SQL, no settings, no identities, no invites sent. No migrations were
+  added. No Person 4 files were edited.
+- Owner to-do: review/merge PR #15; do the §3.4 Supabase setup when ready for staging E2E; answer the three
+  extract-consumer decisions in the audit. Still blocked as before: S3 smoke, app login role, email domain,
+  hosting, live provider.
 
 <!-- Next agent: replace the paragraph above with your own status when you hand back. Keep it short and exact. -->

@@ -75,3 +75,31 @@ def test_totp_factor_enrollment_challenge_and_verify_contract():
     assert calls[0][0] == "GET" and calls[0][1].endswith("/auth/v1/user")
     assert calls[1][3] == {"factor_type": "totp"}
     assert calls[3][3] == {"challenge_id": challenge, "code": "123456"}
+
+
+def test_invite_redeem_and_password_contract_uses_publishable_key_only():
+    calls = []
+
+    def transport(method, url, headers, body):
+        calls.append((method, url, headers, body))
+        return {"access_token": "access", "refresh_token": "refresh", "expires_in": 900} if "verify" in url else {}
+
+    auth = SupabaseAuthClient("https://project.supabase.co", "publishable-test", transport=transport)
+    tokens = auth.verify_invite("pkce_0123456789abcdef")
+    assert tokens.access_token == "access"
+    assert calls[0] == ("POST", "https://project.supabase.co/auth/v1/verify", {"apikey": "publishable-test"},
+                        {"type": "invite", "token_hash": "pkce_0123456789abcdef"})
+    auth.set_password("access", "a long new password")
+    assert calls[1][0:2] == ("PUT", "https://project.supabase.co/auth/v1/user")
+    assert calls[1][2] == {"apikey": "publishable-test", "Authorization": "Bearer access"}
+    assert calls[1][3] == {"password": "a long new password"}
+
+
+@pytest.mark.parametrize("token_hash", ["", "short", "x" * 513, "abc def ghij klmnop", "abcdefghijklmnop/../x",
+                                        "abcdefghijklmnop?x=1", None])
+def test_invite_token_hash_is_validated_before_any_request(token_hash):
+    def transport(*_):
+        raise AssertionError("must not call upstream")
+
+    with pytest.raises(AuthUnavailable):
+        SupabaseAuthClient("https://project.supabase.co", "k", transport=transport).verify_invite(token_hash)

@@ -70,6 +70,21 @@ class SupabaseAuthClient:
     def sign_in(self, email: str, password: str) -> AuthTokens:
         return self._token("password", {"email": email, "password": password})
 
+    def verify_invite(self, token_hash: str) -> AuthTokens:
+        """Redeem a one-time invite ``token_hash`` from the email link for a first session."""
+        if (not isinstance(token_hash, str) or not 16 <= len(token_hash) <= 512 or not token_hash.isascii()
+                or not all(c.isalnum() or c in "-_." for c in token_hash)):
+            raise AuthUnavailable("invalid invitation")
+        try:
+            response = self._transport("POST", f"{self.origin}/auth/v1/verify", {"apikey": self._key},
+                                       {"type": "invite", "token_hash": token_hash})
+            return self._tokens(response)
+        except Exception:
+            raise AuthUnavailable("invitation invalid or expired") from None
+
+    def set_password(self, access_token: str, password: str) -> None:
+        self._user_request("PUT", "user", access_token, {"password": password})
+
     def refresh(self, refresh_token: str) -> AuthTokens:
         return self._token("refresh_token", {"refresh_token": refresh_token})
 

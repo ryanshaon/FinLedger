@@ -1,6 +1,6 @@
 # Customer sign-in with Supabase Auth: design
 
-Status: **partially implemented.** Migrations 008–011 are merged and applied to staging, with both migration trackers verified. JWT verification, server-owned sessions, and Person 3 login/MFA routes are merged with green CI. Invites, staging Auth configuration, hosting and real-user E2E testing remain open. Scope: Person 2 API + Person 3 control UI. Person 4 untouched.
+Status: **partially implemented.** Migrations 008–011 are merged and applied to staging, with both migration trackers verified. JWT verification, server-owned sessions, and Person 3 login/MFA routes are merged with green CI. The staff invite and first-login (set password) flow is implemented and tested offline with a fake Auth transport; it has never called the live Supabase invite endpoint. Staging Auth configuration, hosting and real-user E2E testing remain open. Scope: Person 2 API + Person 3 control UI. Person 4 untouched.
 
 ## 1. Where we are today
 
@@ -44,8 +44,34 @@ Why not keep the reverse-proxy token injection? It pushes login, MFA and session
 
 ### 3.4 Invites and first login (no public sign-up)
 - Turn **off** public sign-ups in Supabase Auth settings.
-- Firm admin invites `email` + roles → we create the `users` row (no `auth_subject`) and call Supabase **admin** invite (`/auth/v1/invite`), which needs the **secret/service-role key**. Only this one code path, in the API process, ever holds it.
-- **No automatic linking by email or JWT metadata** (the rule in 008). The invite response returns the new Supabase user id; the server stores it as `auth_subject` on the pre-created `users` row within the same firm-admin request. A login whose `sub` is unlinked gets "account not provisioned", never a fallback match. The unique constraint prevents one identity from binding to two users.
+- Implemented in `finledger_platform/staff_invites.py` (service + `SupabaseAdminClient`) and exposed as Person 3
+  browser routes `GET /admin/staff` and `POST /admin/staff/invite`. Browser routes are used because only the
+  cookie session carries the verified `aal`; bearer API tokens have no assurance level and cannot invite.
+- Gate: firm admin **and** AAL2 from the resolved browser session, re-checked against `users.firm_admin` inside
+  the firm-scoped transaction; login CSRF + same-origin check. Roles are limited to `ap_clerk`, `approver`,
+  `payer`; every client must belong to the inviter's firm (RLS plus an explicit firm check). Firm admin is an
+  explicit checkbox.
+- Order (Auth and Postgres cannot share a transaction, so it fails closed):
+  1. Commit a pending `users` row with `auth_subject` NULL and no API token, plus its client memberships. An
+     unlinked row can never sign in: there is no email fallback.
+  2. `POST /auth/v1/invite` with the **secret key**. Failure leaves only the unlinked row; re-submitting the same
+     email retries and **replaces** (never accumulates) the pending grants.
+  3. Link the returned Supabase user id with compare-and-set (`auth_subject is null`). If that fails, delete the
+     new Auth user only when no row is linked to it; if the delete also fails, log the Auth user id (no email)
+     for manual removal. The orphan identity cannot reach data because it is unlinked.
+- Duplicates: an email that is already linked can only be **re-sent** (email alone; roles never change through
+  this form) and the returned id must equal the stored link. An email used in another firm, or a pre-existing
+  API-token account, is a generic conflict and is never linked by email. Such legacy accounts are linked by an
+  operator, as before.
+- First login: the invite email links to `GET /auth/accept?token_hash=…&type=invite`, which only renders a form
+  (mail scanners prefetch links). `POST /auth/accept` checks the password (12–1024 characters, before the
+  one-time token is spent), redeems it with `POST /auth/v1/verify`, requires the subject to be **already linked**,
+  sets the password with `PUT /auth/v1/user`, signs that temporary Auth session out and redirects to `/login`.
+  The person then signs in and must enrol TOTP (AAL2) before seeing client data.
+- Owner setup before staging E2E: set `SUPABASE_SECRET_KEY` only in the control UI's server secret settings;
+  in Supabase → Auth → Email templates → *Invite user*, point the link at
+  `{{ .SiteURL }}/auth/accept?token_hash={{ .TokenHash }}&type=invite`; set Site URL / redirect allow-list to the
+  control UI origin; confirm in staging that re-inviting an unaccepted user returns the same user id.
 
 ### 3.5 Sign-out and revocation
 - `POST /logout`: delete server session, call `/auth/v1/logout` (revokes refresh token).
@@ -67,7 +93,7 @@ Why not keep the reverse-proxy token injection? It pushes login, MFA and session
 |---|---|---|
 | `SUPABASE_URL` | no | API + control UI |
 | `SUPABASE_PUBLISHABLE_KEY` (anon) | no, but keep server-side | login/refresh/OTP/MFA calls |
-| `SUPABASE_SECRET_KEY` (service role) | **yes**, secret manager | invite endpoint only |
+| `SUPABASE_SECRET_KEY` (service role) | **yes**, secret manager | control UI invite path only (`SupabaseAdminClient`); unset = invites disabled |
 | `FINLEDGER_ENC_KEY` | yes | encrypting stored refresh tokens |
 
 Supabase dashboard settings: disable sign-ups, Site URL + redirect allow-list = our domain, access-token expiry 900 s, enable TOTP MFA, custom SMTP (Resend, verified sender domain) for auth emails, leaked-password protection on.
@@ -77,7 +103,7 @@ Supabase dashboard settings: disable sign-ups, Site URL + redirect allow-list = 
 2. ~~`009` sessions + lookup function + tests~~ merged in PR #7 and applied to staging, followed by migrations 010 and 011.
 3. ~~JWT verifier module + unit tests~~ merged. Server-side Auth client and session manager merged in PR #8.
 4. ~~Person 3 `/login`, `/logout`, `/mfa` and cookie-backed browser routes~~ merged in PR #9 with green CI. Legacy bearer remains for local development; staging/production fail startup without browser Auth config. All browser staff need AAL2 before client data.
-5. Invite endpoint (Person 2) behind firm-admin + aal2.
+5. ~~Invite endpoint behind firm-admin + aal2, plus first-login password set~~ implemented and tested offline (fake Auth). Needs the owner setup in §3.4 before any live use.
 6. Staging: configure the Supabase settings in section 6, create one test firm, run an end-to-end browser login (Playwright) including MFA.
 
 ## 8. Owner decisions (answered)

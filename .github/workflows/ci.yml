@@ -61,4 +61,4 @@ jobs:
       - name: Image entry points resolve
         run: |
           docker run --rm finledger:ci finledger-platform --help
-          docker run --rm finledger:ci python -c "import finledger_control.cli, finledger_platform.s3_smoke, boto3"
+          docker run --rm finledger:ci python -c "import finledger_control.cli, finledger_platform.s3_smoke, finledger_platform.staff_invites, boto3"
