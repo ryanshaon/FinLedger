@@ -205,6 +205,14 @@ every completed or WIP change. No uncommitted implementation may remain on the P
 
 ## Latest status
 
+**Deployment documentation follow-up (2026-10-09):** `handover/deployment-runbook` adds a release/recovery
+runbook based on the actual CLI, Docker/Compose, Auth and smoke-proof code. It documents release blockers,
+scanner profile/readiness, worker versus HTTP health, secret/log handling, real proof cleanup and safe
+rollback without down-migrations or blind mail replay. README now guards `.env` creation against overwrites.
+Documentation only; no new test counts claimed, hosted changes or Person 4 edits. Main was refreshed and
+unchanged at `8716a5e`; a new presence-only private configuration check still found S3, Supabase and Resend
+keys missing/placeholders. The owner decisions remain unanswered. Review/CI pending for this branch.
+
 **Current follow-up (2026-10-09):** PR #20 documentation, PR #21 form hardening and PR #22 assurance binding
 were integrated after green test/image CI with non-forced fast-forwards and verified owner metadata.
 Main application tip is `f8eaba2`; final handover update branch is `handover/auth-hardening-status`.

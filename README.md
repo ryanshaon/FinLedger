@@ -46,7 +46,11 @@ powershell -ExecutionPolicy Bypass -File scripts/test.ps1
 
 The repository root contains `.env.example` with placeholders for PostgreSQL,
 Supabase, storage, email, Person 1 AI providers, and the Person 4 Tally agent.
-Create a local copy with `Copy-Item .env.example .env`. Never distribute `.env`.
+Create a local copy only if `.env` does not already exist. Never overwrite existing credentials or distribute `.env`.
+
+```powershell
+if (-not (Test-Path -LiteralPath .env)) { Copy-Item -LiteralPath .env.example -Destination .env }
+```
 
 PowerShell does not automatically load `.env`. From this directory, load it into the current terminal before running either service:
 
@@ -58,6 +62,9 @@ Get-Content .env | Where-Object { $_ -and -not $_.StartsWith('#') } | ForEach-Ob
 ```
 
 Mock keys are suitable only for wiring and tests. Replace every `mock_`, `sk-mock`, `sk-ant-mock`, and local database password before deployment.
+
+Release gates, staging proofs, scanner setup and safe rollback are documented in
+[the deployment runbook](docs/DEPLOYMENT_RUNBOOK.md). This procedure does not mean a customer release is ready.
 
 ## Person 1 quick start
 
