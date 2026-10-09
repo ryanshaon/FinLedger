@@ -422,12 +422,24 @@ wheels = [
 ]
 
 [[package]]
+name = "finledger-ai"
+version = "0.1.0"
+source = { editable = "../packages" }
+dependencies = [
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "pydantic", specifier = ">=2.9" }]
+
+[[package]]
 name = "finledger-platform"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "cryptography" },
     { name = "fastapi" },
+    { name = "finledger-ai" },
     { name = "markitdown", extra = ["pdf", "xlsx"] },
     { name = "pdfplumber" },
     { name = "pillow" },
@@ -457,6 +469,7 @@ requires-dist = [
     { name = "boto3", marker = "extra == 's3'", specifier = ">=1.34" },
     { name = "cryptography", specifier = ">=43" },
     { name = "fastapi", specifier = ">=0.115" },
+    { name = "finledger-ai", editable = "../packages" },
     { name = "markitdown", extras = ["pdf", "xlsx"], specifier = ">=0.1" },
     { name = "pdfplumber", specifier = ">=0.11" },
     { name = "pillow", specifier = ">=10" },

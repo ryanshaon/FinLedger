@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-# FinLedger runtime image: Person 2 platform (API, ingest worker, outbox worker, migrations) + Person 3 control UI.
+# FinLedger runtime image: Person 1 AI packages + Person 2 platform + Person 3 control UI.
 # One image, the command picks the process:
 #   finledger-platform serve --host 0.0.0.0 --port 8000
 #   finledger-platform worker
@@ -11,10 +11,12 @@ COPY --from=ghcr.io/astral-sh/uv:0.10.9 /uv /bin/uv
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PROJECT_ENVIRONMENT=/opt/venv UV_PYTHON_DOWNLOADS=never
 WORKDIR /src
 COPY person2_platform/pyproject.toml person2_platform/uv.lock person2_platform/
+COPY packages/pyproject.toml packages/
 # Optional `--secret id=extra_ca,src=<pem>` for builds behind a TLS-intercepting proxy; never baked into the image.
 RUN --mount=type=secret,id=extra_ca,required=false \
     if [ -f /run/secrets/extra_ca ]; then export SSL_CERT_FILE=/run/secrets/extra_ca; fi; \
-    uv sync --project person2_platform --locked --no-dev --extra s3 --no-install-project
+    uv sync --project person2_platform --locked --no-dev --extra s3 --no-install-project --no-install-package finledger-ai
+COPY packages packages
 COPY person2_platform person2_platform
 COPY person3_control_ui person3_control_ui
 RUN --mount=type=secret,id=extra_ca,required=false \
