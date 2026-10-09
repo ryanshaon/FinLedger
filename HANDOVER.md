@@ -67,8 +67,8 @@ PYTHONPATH=person2_platform/src:person3_control_ui/src person3_control_ui/.venv/
 docker build -t finledger:ci .        # CI "image" job
 ```
 
-Verified baseline through PR #29: Person 1 **43 passed**, evals **3/3 + 5/5**, Person 2 **297 passed**,
-Person 3 **55 passed**; `test` + `image` CI green on `bef822e`. Re-run exact counts after code changes.
+Verified baseline through PR #30: Person 1 **43 passed**, evals **3/3 + 5/5**, Person 2 **333 passed**,
+Person 3 **55 passed**; `test` + `image` CI green on `731f9e9`. Re-run exact counts after code changes.
 - Cloud containers: PostgreSQL may be installed but not on PATH. Use
   `export PATH=/usr/lib/postgresql/16/bin:$PATH`.
 
@@ -173,7 +173,7 @@ Tick these off in order. An agent can help explain each step but must never see 
 | 6h | **Storage smoke failure/report accuracy** | PR #27 integrated after independent review and green CI | no keys needed for code tests; live smoke still blocked |
 | 6i | **Strict bounded scanner response validation** | PR #28 integrated after independent review and green CI | none; no migration or hosted changes |
 | 6j | **Email webhook request boundary** | PR #29 integrated after independent review and green CI | none; live email remains blocked |
-| 6k | **Aggregate scanner deadline and post-auth email DB acquisition** | active on `hardening/runtime-resource-boundaries`; final verification pending | none; no hosted changes |
+| 6k | **Aggregate scanner deadline and post-auth email DB acquisition** | PR #30 integrated after independent reviews and green CI | none; no hosted changes |
 | 7 | **Performance:** 28 unindexed FKs, 13 "unused" indexes on an empty DB | do not act on zero-data advisor stats | real query plans |
 
 Owner decisions already answered (do not re-ask): password + TOTP MFA; SSO deferred; 8 h absolute / 30 min idle
@@ -183,7 +183,8 @@ browser sessions, applied to all staff with AAL2 required before client data.
 
 **Packaging (PR #17), worker diagnostic sanitization (PR #18), form input hardening (PR #21) and browser MFA
 cookie assurance (PR #22), scanner configuration/logging guards (PRs #25/#26), signed downloads/storage
-proof reports (PR #27), strict scanner protocol validation (PR #28), and email request limits (PR #29)
+proof reports (PR #27), strict scanner protocol validation (PR #28), email request limits (PR #29),
+and scanner deadlines/post-auth email pool acquisition (PR #30)
 are implemented and verified. Do not repeat them.** The remaining Open work items need credentials, configuration, an approved hosting account/budget,
 owner policy decisions, or real query plans. Start from current `main` and inspect the linked PRs before editing.
 
@@ -216,8 +217,9 @@ every completed or WIP change. No uncommitted implementation may remain on the P
 
 **2026-10-09 — local production-boundary hardening; no deployment performed.**
 
-- Main includes PRs #24–#29 with green `test` and `image` CI. Current published application tip is
-  `bef822e`; integration used non-forced fast-forwards of reviewed commits with the owner's noreply identity,
+- Main includes PRs #24–#30 with green `test` and `image` CI. Current published application tip is
+  `731f9e9`; final status-only branch is `handover/resource-safety-status`. Integration used non-forced
+  fast-forwards of reviewed commits with the owner's noreply identity,
   without attribution trailers. No additional history rewrite was performed. The historical metadata
   correction and local backup branches are documented above; do not repeat or push those backups.
 - PR #24 adds [DEPLOYMENT_RUNBOOK.md](docs/DEPLOYMENT_RUNBOOK.md), derived from actual CLI/runtime code.
@@ -250,7 +252,7 @@ every completed or WIP change. No uncommitted implementation may remain on the P
   No secret values were read/printed; no Person 4 edits. Presence-only private configuration check still
   found S3, Supabase and Resend keys missing/placeholders. Owner maker/provider-PII/statements questions
   remain unanswered, as do deployment inputs in the Owner checklist. Never guess those decisions.
-- Active follow-up `hardening/runtime-resource-boundaries`: aggregate scanner socket-I/O deadline has
+- PR #30, `hardening/runtime-resource-boundaries`: aggregate scanner socket-I/O deadline has
   **17 failed / 1 passed** regression cases before implementation and **18 passed** afterward; first full
   platform verification **315 passed**. System DNS may overrun connection timeout, but late completion is
   rejected. A synthetic ASGI review reproduced unauthenticated email uploads holding DB connections
@@ -264,7 +266,10 @@ every completed or WIP change. No uncommitted implementation may remain on the P
   with only the existing Starlette warning. Commands used the suites above with workspace basetemps
   `.pytest-resource-final-platform`, `.pytest-resource-final-control`, `.pytest-resource-final-ai`, and
   mock report `.pytest-resource-final-ai/eval_report.md`. All implementation is finished and reviewed;
-  PR CI/integration remains pending. Do not reimplement these fixes while their reviewed branch exists.
-- Keep the owner's **5% remaining** hand-back rule. Current usage was above that threshold; do not repeat
-  completed tests simply to spend credits. Finish/push the bounded active branch, then resume the first
-  newly owner-unblocked item. Update this section before stopping; no uncommitted work may remain.
+  both push/PR CI `test` and `image` checks passed on exact commit `731f9e9` before main integration.
+  No unfinished implementation or WIP branch. Do not repeat these completed fixes.
+- Keep the owner's **5% remaining** hand-back rule. Current usage was above that threshold (28% primary /
+  53% weekly remaining at the last check); do not repeat completed tests simply to spend credits.
+  Resume the first owner-unblocked item, using the Owner checklist and Next agent task above. Do not guess
+  decisions or provision paid resources. Nothing is left uncommitted; publish this status-only branch via
+  PR with green CI before final integration. No hosted proof or production readiness is claimed.
