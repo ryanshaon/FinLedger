@@ -18,9 +18,9 @@ remains the connector boundary and is represented by its architecture pack.
 
 | Seat | Status | Source | Validation |
 |---|---|---|
-| Person 1 | Prototype | `packages/`, `evals/` | 41 tests + deterministic fixture evaluation |
-| Person 2 | Implemented | `person2_platform/` | 60 tests; one optional-storage test may skip |
-| Person 3 | Implemented | `person3_control_ui/` | 38 tests |
+| Person 1 | Prototype | `packages/`, `evals/` | 43 tests + deterministic fixture evaluation |
+| Person 2 | Implemented | `person2_platform/` | 166 tests |
+| Person 3 | Implemented | `person3_control_ui/` | 50 tests |
 | Person 4 | Planned | `person4_tally/` | Architecture only; no runnable connector |
 
 `Implemented` means runnable and integration-tested. `Prototype` means runnable
@@ -32,7 +32,7 @@ and Person 4 remains to be built.
 ## Prerequisites and verification
 
 - Python 3.12 (the locked native dependencies do not support Python 3.14).
-- `uv` for Person 2/3 dependency environments.
+- `uv` for the Person 1–3 dependency environments.
 - PostgreSQL tools (`initdb`, `pg_ctl`, `psql`) on `PATH` for integration tests.
 - EICAR scanner mode for local tests; `clamd` is required in production.
 
@@ -62,13 +62,17 @@ Mock keys are suitable only for wiring and tests. Replace every `mock_`, `sk-moc
 ## Person 1 quick start
 
 ```powershell
-$env:PYTHONPATH = "packages"
-python -m pytest packages evals -q --basetemp=.pytest-person1
-python evals/run_evals.py --provider-mode mock
+uv sync --project person2_platform --python 3.12 --locked --all-extras --dev
+$env:PYTHONPATH = "evals"
+person2_platform/.venv/Scripts/python.exe -m pytest packages evals -q --basetemp=.pytest-person1
+person2_platform/.venv/Scripts/python.exe evals/run_evals.py --provider-mode mock
 ```
 
-Person 1 currently uses deterministic mock provider methods. The environment
-variables expose the future live-provider boundary without requiring real keys.
+Person 1 is installed as `finledger-ai`, including its prompts and schemas, in
+both dependency environments and the runtime image. It currently uses deterministic
+mock provider methods. The environment variables expose the future live-provider
+boundary without requiring real keys. Packaging does not implement the extract queue
+consumer or a live provider; staging and production continue to reject mock AI.
 
 ## Runtime order
 

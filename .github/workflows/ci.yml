@@ -33,7 +33,7 @@ jobs:
 
       - name: Test Person1
         env:
-          PYTHONPATH: packages:evals
+          PYTHONPATH: evals
         run: |
           person2_platform/.venv/bin/python -m pytest packages evals -q --basetemp=.pytest-person1
           person2_platform/.venv/bin/python evals/run_evals.py --provider-mode mock
@@ -62,3 +62,7 @@ jobs:
         run: |
           docker run --rm finledger:ci finledger-platform --help
           docker run --rm finledger:ci python -c "import finledger_control.cli, finledger_platform.s3_smoke, finledger_platform.staff_invites, boto3"
+      - name: Person1 installed runtime and hosted guards
+        run: |
+          docker run --rm finledger:ci python -I -c "import extract.vision_fallback, usage.model_router"
+          docker run --rm -i finledger:ci python -I - < scripts/check_person1_runtime.py

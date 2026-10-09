@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "FinLedger AP - Person 2: tenancy, intake doors, ingest, object store, documents, file prep"
 requires-python = ">=3.12"
 dependencies = [
+    "finledger-ai",
     "fastapi>=0.115",
     "uvicorn>=0.30",
     "python-multipart>=0.0.9",
@@ -15,6 +16,9 @@ dependencies = [
     "cryptography>=43",
     "PyJWT[crypto]>=2.10,<3",
 ]
+
+[tool.uv.sources]
+finledger-ai = { path = "../packages", editable = true }
 
 [project.optional-dependencies]
 s3 = ["boto3>=1.34"]
