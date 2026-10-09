@@ -34,7 +34,7 @@ decisions, so wiring a worker now would either guess policy or ship something th
 | P1 extraction | `packages/extract/vision_fallback.py::ExtractionDispatcher.extract(client_id, document_id, markdown, page_image_paths)` → `CanonicalInvoice` | mock provider only |
 | P3 scoring | `ControlService.score(client_id, document_id, invoice, actor_id)` requires `documents.status = 'extracted'` and writes `canonical_invoices.maker_id = actor_id` (`NOT NULL`, FK `users`) | live, tested with human actors |
 | Status `received → extracted` | **nothing sets it** | gap |
-| Runtime image | `Dockerfile` copies only `person2_platform` and `person3_control_ui`; `packages/` is not installed anywhere | gap |
+| Runtime image | `Dockerfile` installs `packages/` as `finledger-ai`, a locked local dependency of Person 2; PR #17 image CI checks installed modules/resources | packaging gap closed; consumer still absent |
 
 ### Blocking decisions (owner)
 
@@ -50,11 +50,13 @@ decisions, so wiring a worker now would either guess policy or ship something th
 3. **Statements and CSV rows.** `document_class = statement` is enqueued today. Decide: skip with
    `status = 'exception'` and reason `statement not extracted`, or extract. Recommendation: skip for v1.
 
-### Packaging (pre-requisite, no policy needed)
+### Packaging (completed in PR #17; no policy decision needed)
 
-Give Person 1 a `pyproject.toml` (package `packages/*` as `finledger_ai`, or install the existing top-level
-packages) and add it as a path dependency of `person2_platform`. Run `uv lock` in both P2 and P3 and
-`uv lock --check`. Add an image check: `python -c "import extract.vision_fallback"`.
+`packages/pyproject.toml` packages the existing top-level modules as the `finledger-ai` distribution,
+including prompts and contract JSON Schemas. Person 2 declares the local dependency, Person 3 inherits it,
+and both lockfiles are updated. The final image installs a non-editable wheel; CI checks imports, resources
+and staging/production mock rejection via `scripts/check_person1_runtime.py`. Packaging does not implement
+the extract consumer or approve any live-provider data flow.
 
 ### Consumer design (once 1–3 are answered)
 

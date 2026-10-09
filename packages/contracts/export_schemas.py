@@ -1,6 +1,6 @@
 import json
 import os
-from schemas import (
+from contracts.schemas import (
     CanonicalInvoice,
     RiskScore,
     VoucherDraft,
