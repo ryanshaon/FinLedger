@@ -202,11 +202,19 @@ def create_app(settings: Settings, pool, store) -> FastAPI:
     async def inbound_email(request: Request, to: str | None = Query(default=None),
                             x_finledger_signature: str | None = Header(default=None),
                             conn: psycopg.Connection = Depends(conn_dep)):
-        raw = await request.body()
-        if len(raw) > MAX_EMAIL_BYTES:
-            raise HTTPException(413, "message too large")
+        buffered = bytearray()
+        async for chunk in request.stream():
+            if len(buffered) + len(chunk) > MAX_EMAIL_BYTES:
+                raise HTTPException(413, "message too large")
+            buffered.extend(chunk)
+        if (not x_finledger_signature or len(x_finledger_signature) != 71
+                or not x_finledger_signature.startswith("sha256=")
+                or any(c not in "0123456789abcdef" for c in x_finledger_signature[7:])):
+            raise HTTPException(401, "bad signature")
+        raw = bytes(buffered)
+        del buffered
         good = "sha256=" + hmac.new(settings.inbound_webhook_secret, raw, hashlib.sha256).hexdigest()
-        if not x_finledger_signature or not hmac.compare_digest(x_finledger_signature, good):
+        if not hmac.compare_digest(x_finledger_signature, good):
             raise HTTPException(401, "bad signature")
 
         parsed = email_in.parse(raw, settings.inbound_authserv_id)

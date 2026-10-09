@@ -67,8 +67,8 @@ PYTHONPATH=person2_platform/src:person3_control_ui/src person3_control_ui/.venv/
 docker build -t finledger:ci .        # CI "image" job
 ```
 
-Verified baseline for PR #22: Person 1 **43 passed**, evals 3/3 + 5/5, Person 2 **181 passed**, Person 3
-**54 passed**; `test` + `image` CI green on implementation commit `f8eaba2`. Re-run exact counts after code changes.
+Verified baseline through PR #28: Person 1 **43 passed**, evals **3/3 + 5/5**, Person 2 **274 passed**,
+Person 3 **55 passed**; `test` + `image` CI green on `dd60ef9`. Re-run exact counts after code changes.
 - Cloud containers: PostgreSQL may be installed but not on PATH. Use
   `export PATH=/usr/lib/postgresql/16/bin:$PATH`.
 
@@ -169,9 +169,10 @@ Tick these off in order. An agent can help explain each step but must never see 
 | 6d | **Browser cookie MFA assurance binding** | PR #22 integrated after independent review and green CI | none; no migration or hosted changes |
 | 6e | **Hosted antivirus configuration guard** | PR #25 integrated after green CI | none; no migration or hosted changes |
 | 6f | **Credential URL access-log privacy** | PR #26 integrated after green CI | none; proxy logging remains operator configuration |
-| 6g | **Signed-download validation and safe filenames** | implemented and locally verified on `hardening/storage-smoke-report`; CI pending | none; local-store boundary only |
-| 6h | **Storage smoke failure/report accuracy** | implemented and locally verified on `hardening/storage-smoke-report`; CI pending | no keys needed for code tests; live smoke still blocked |
-| 6i | **Strict bounded scanner response validation** | implemented and locally verified on `hardening/scanner-response-validation`; CI pending | none; no migration or hosted changes |
+| 6g | **Signed-download validation and safe filenames** | PR #27 integrated after independent review and green CI | none; local-store boundary only |
+| 6h | **Storage smoke failure/report accuracy** | PR #27 integrated after independent review and green CI | no keys needed for code tests; live smoke still blocked |
+| 6i | **Strict bounded scanner response validation** | PR #28 integrated after independent review and green CI | none; no migration or hosted changes |
+| 6j | **Email webhook request boundary** | implemented on `hardening/inbound-request-boundary`; full verification and CI pending | none; live email remains blocked |
 | 7 | **Performance:** 28 unindexed FKs, 13 "unused" indexes on an empty DB | do not act on zero-data advisor stats | real query plans |
 
 Owner decisions already answered (do not re-ask): password + TOTP MFA; SSO deferred; 8 h absolute / 30 min idle
@@ -180,7 +181,8 @@ browser sessions, applied to all staff with AAL2 required before client data.
 ## ▶️ Next agent task (resume the first owner-unblocked item)
 
 **Packaging (PR #17), worker diagnostic sanitization (PR #18), form input hardening (PR #21) and browser MFA
-cookie assurance (PR #22) are implemented and verified. Do not repeat them.** The remaining Open work items need credentials, configuration, an approved hosting account/budget,
+cookie assurance (PR #22), scanner configuration/logging guards (PRs #25/#26), signed downloads/storage
+proof reports (PR #27), and strict scanner protocol validation (PR #28) are implemented and verified. Do not repeat them.** The remaining Open work items need credentials, configuration, an approved hosting account/budget,
 owner policy decisions, or real query plans. Start from current `main` and inspect the linked PRs before editing.
 
 **Metadata correction completed with explicit owner approval:** PR #19 had green `test` and `image` checks
@@ -210,118 +212,42 @@ every completed or WIP change. No uncommitted implementation may remain on the P
 
 ## Latest status
 
-**Scanner protocol follow-up (2026-10-09):** `hardening/scanner-response-validation` accepts only the exact
-NUL-terminated `stream: OK` reply as clean, validates framed/nonempty FOUND signatures and UTF-8, bounds
-responses to 4096 bytes and keeps malformed response data out of ScannerError diagnostics. Eight synthetic
-TCP cases were confirmed red before the fix. Fresh full suites: **274 platform / 55 control / 43 AI**;
-mock evaluations **3/3 + 5/5**. Existing valid OK/FOUND integration and retry/fail-closed tests still pass.
-Storage PR #27 CI is green on `082005b`; independent review pending before integration. Scanner branch CI
-pending. A separate bounded email-body/signature fix is being implemented only in the inbound route and
-new tests; it is not yet verified or committed. No hosted calls, migrations, credentials or Person 4 edits.
+**2026-10-09 — local production-boundary hardening; no deployment performed.**
 
-**Storage boundary follow-up (2026-10-09):** `hardening/storage-smoke-report` contains signed-download
-validation and storage-proof report fixes. Fresh full suites: **266 platform / 55 control / 43 AI**;
-mock evaluations **3/3 + 5/5**. Signed-download worker confirmed **53 red / 14 passed** before its fix and
-**67 focused tests passed** after it; parent reviewed the patch, updated the old negative-TTL expiry fixture
-to clock advancement, and ran every suite. Malformed signatures/encodings/claims/keys/filenames now deny
-with 403 before storage reads; finite expiry must be strictly future, local issuance requires positive integer
-TTL, shared key checks reject trailing newlines, and Unicode/unsafe filename characters use encoded headers.
-S3 implementation is otherwise unchanged. Nine storage-proof regression failures were confirmed before
-fixed safe report handling; all **10** new proof cases pass with mocked S3, including real mock-object cleanup
-after uncertain acceptance and no exception canary in CLI output. Only 401/403/404 count as public denial;
-400/429/5xx do not. Legacy 400 responses require investigation, not an inferred privacy PASS. This is not a
-live smoke result. Independent scanner review found no actionable issue; PR #26 is integrated on main
-at `d1df56e` with green test/image CI. Current combined storage branch CI is pending. No hosted SQL/config,
-migrations, credentials, live provider/email/identity calls, or Person 4 edits. No uncommitted implementation
-will be left when handing back; unresolved owner decisions and real private setup remain as listed above.
-
-**Access-log privacy follow-up (2026-10-09):** `hardening/credential-url-logs` disables Uvicorn access logs
-in both built-in launchers because invitation/upload/download URLs contain credentials. Both launch-boundary
-tests were confirmed failing first. Fresh complete local suites: **189 platform / 55 control / 43 AI**;
-mock evaluations **3/3 + 5/5**. Runbook corrected: Intake health checks `SELECT 1`, Control health is liveness;
-proxy/custom ASGI logs need independent redaction/disablement. S3 proof currently accepts 429/5xx as privacy
-denial and loses its accumulated cleanup report when a step raises; these limitations are explicitly recorded,
-not claimed fixed. Independent signed-download review found malformed credential/claim handling defects;
-a bounded implementation is in progress in `store.py`, the signed-download route and a new test file only.
-No hosted calls/SQL, migrations, secret changes or Person 4 edits. Local launcher path failures were repaired
-by locked offline reinstalls of project packages and both `.exe --help` commands then passed. PR #25 is on
-main at `11cdaf9` with green test/image CI; current logging branch review/CI is pending.
-
-**Scanner safety follow-up (2026-10-09):** `hardening/hosted-scanner-config` rejects EICAR-only mode in
-staging/production and rejects unknown scanner names in every environment before runtime startup.
-Four regression cases failed before implementation. Fresh complete local suites: Person 2 **188 passed**,
-Person 3 **54 passed**, Person 1 **43 passed**; mock evaluations **3/3 + 5/5**. Seven new scanner settings
-cases include local EICAR behavior and accepted hosted ClamAV settings without network calls. Existing
-Starlette deprecation warning remains. PR #25 test/image CI passed and was integrated. No hosted configuration/SQL, migrations, credentials,
-or Person 4 edits. Public signed-download handling and the runbook are receiving independent read-only
-reviews; no additional fix is yet claimed. Both console .exe wrappers failed locally with a uv trampoline
-path error; CLI help works via installed Python modules. Do not mistake that local launcher issue for a
-verified production image failure. Main currently includes the green-CI runbook PR #24 at `a781664`.
-
-**Deployment documentation follow-up (2026-10-09):** `handover/deployment-runbook` adds a release/recovery
-runbook based on the actual CLI, Docker/Compose, Auth and smoke-proof code. It documents release blockers,
-scanner profile/readiness, worker versus HTTP health, secret/log handling, real proof cleanup and safe
-rollback without down-migrations or blind mail replay. README now guards `.env` creation against overwrites.
-Documentation only; no new test counts claimed, hosted changes or Person 4 edits. Main was refreshed and
-unchanged at `8716a5e`; a new presence-only private configuration check still found S3, Supabase and Resend
-keys missing/placeholders. The owner decisions remain unanswered. PR #24 test/image CI passed and the
-exact reviewed commit was integrated with a non-forced fast-forward; no deployment was performed.
-
-**Current follow-up (2026-10-09):** PR #20 documentation, PR #21 form hardening and PR #22 assurance binding
-were integrated after green test/image CI with non-forced fast-forwards and verified owner metadata.
-Main application tip is `f8eaba2`; final handover update branch is `handover/auth-hardening-status`.
-Malformed non-ASCII CSRF values and invalid origin URLs now return 403 instead of crashing;
-all four cases failed before the fix. A session review reproduced an MFA race against temporary local
-Postgres: upstream verification succeeds, a concurrent version change blocks local cookie rekey, and
-refresh previously elevated the old cookie. The fix on `hardening/browser-assurance-binding` encrypts
-local cookie assurance, preserves it through refresh, and grants AAL2 only after successful local rekey
-and a verified AAL2 JWT. Legacy bundles require MFA again; malformed markers are denied. Six assertions
-failed before the fix. Fresh full local suites: Person 1 **43 passed**, mock evals **3/3 + 5/5**; Person 2
-**181 passed**; Person 3 **54 passed**. The final focused browser suite also passed **10 tests**.
-Existing Starlette deprecation warning remains. Independent assurance review found no remaining actionable
-issue; PR #22's push and PR CI test/image checks passed on exact commit `f8eaba2`. No unfinished implementation,
-WIP branch, hosted calls/SQL, migrations, credential changes, or Person 4 edits. The owner inputs in the
-checklist are still unanswered; do not guess them. Maker/provider-PII/statement questions were posted again
-asynchronously; await explicit answers. Usage was well above the 5% threshold; do not spend credits on
-repeating completed work solely to reach that threshold. Resume the first newly unblocked owner item.
-
-**2026-10-09, completed application work and owner-approved metadata correction.**
-[PR #17](https://github.com/ryanshaon/FinLedger/pull/17) and
-[PR #18](https://github.com/ryanshaon/FinLedger/pull/18) merged with final green CI.
-[PR #19](https://github.com/ryanshaon/FinLedger/pull/19) passed both CI checks on `f7cc5ac` and is now on
-published `main` after an explicitly approved exact-lease history correction. Application files match
-the original `03ec760` tip exactly; only the handover changed in addition to commit metadata.
-
-- Aligned the clean Windows checkout with rewritten history; retained the old tip only on the local archive
-  branch named in owner checklist 1. No user edits or `.env` were overwritten. Local commits use the owner's
-  noreply identity without attribution trailers. GitHub's squash defaults added **owner** co-author trailers
-  to PRs #17/#18; no AI identity was added, but these violate the literal no-trailer rule. Corrected candidate
-  commits are now `d77b124` and `12c93c1`, with identical trees/dates and base `4256f6d`. The original tip is preserved
-  locally at `archive/pre-owner-metadata-correction-20261009`. The owner explicitly approved the guarded
-  replacement; local main is aligned and its recent metadata was verified. Future squash merges must use
-  the explicit author email and clean body described above. The low-usage hand-back threshold is **5% remaining**.
-- Person 1 now ships as the `finledger-ai` wheel: all eight module groups, three prompt resources and six JSON
-  Schemas, with a direct Pydantic dependency. Person 2 installs it; Person 3 inherits it. Both locks refreshed
-  with no unrelated dependency upgrades. Docker installs it non-editably; CI tests no longer inject `packages`
-  into `PYTHONPATH`. Fixed the exporter's installed import and the Windows test runner's environment selection.
-- Fresh local checks (Python 3.12 / PostgreSQL 18, app-side non-owner test roles): Person 1 **43 passed**;
-  Person 2 **177 passed** after the diagnostic changes; Person 3 **50 passed**. Mock evaluations **3/3 + 5/5**, report written under ignored
-  test output. Both `uv lock --check` commands passed. An isolated standalone wheel, outside the checkout,
-  passed **9 imports, 3 prompts, 6 schemas and 2 hosted mock guards**. Windows runner syntax checked.
-- PR #17 merged with final `test` and `image` CI green. PR #18 `test` and `image` CI passed on implementation
-  commit `2543866`; its logs confirm **43 / 177 / 50** tests and **3/3 + 5/5** evaluations, plus all installed
-  image resource/guard checks. CI supplies `docker build`; Docker is unavailable locally.
-- Worker failures now use fixed categories in `jobs.last_error`, MIME-based unreadable-document reasons and
-  worker-owned logs. Ingest/outbox outer boundaries suppress standard escaping traceback chains, including
-  processing + DB-settlement double failures. Eleven new synthetic canaries cover payloads, causes/notes,
-  genuine local Postgres settlement errors, rollback, lease recovery, scanner fail-closed behavior and backoff.
-  Original seven leak cases and three settlement cases were confirmed failing before their fixes. Independent
-  reviews found no remaining actionable issue in these changes. This is not a complete PII/provider policy.
-- **Supabase unchanged:** no SQL, settings, identities or invites; no new migrations. No Person 4 edits.
-  No half-done implementation or WIP branch. The consumer remains documentation only and blocked on owner
-  checklist 5. A private Windows config check returned presence/placeholder flags only: S3 credentials,
-  Supabase publishable/secret keys and Resend key are missing or placeholders; the encryption key is present
-  but was not validated. No secret value was displayed and no live smoke, invite or provider call was attempted.
-  Follow Next agent task when the owner supplies the listed inputs; all code changes must still use PR + green CI.
-
-<!-- Next agent: replace the paragraph above with your own status when you hand back. Keep it short and exact. -->
+- Main includes PRs #24–#28 with green `test` and `image` CI. Current published application tip is
+  `dd60ef9`; integration used non-forced fast-forwards of reviewed commits with the owner's noreply identity,
+  without attribution trailers. No additional history rewrite was performed. The historical metadata
+  correction and local backup branches are documented above; do not repeat or push those backups.
+- PR #24 adds [DEPLOYMENT_RUNBOOK.md](docs/DEPLOYMENT_RUNBOOK.md), derived from actual CLI/runtime code.
+  README guards existing `.env` files against overwrite. Locked offline project reinstalls repaired stale
+  local console launchers; both `.exe --help` checks passed. No dependencies were upgraded.
+- PR #25 rejects unknown scanners in every environment and EICAR-only scanning in staging/production.
+  PR #26 disables Uvicorn access logs at both CLI launch boundaries to avoid credential-bearing URL logs.
+  Operator-managed proxy/custom-server logging still requires private configuration.
+- PR #27 rejects malformed signed credentials/claims before object reads, validates finite expiry and safe
+  filenames, and encodes Unicode download filenames safely. S3 smoke uses fixed safe failure labels,
+  preserves cleanup results after errors, and counts only 401/403/404 as unsigned denial. Other errors,
+  including legacy 400, remain unverified/fail-closed. No real S3 proof has been run. Both changes received
+  independent review without remaining actionable findings.
+- PR #28 requires complete bounded ClamAV replies and exact clean-result framing. Eight regression cases
+  failed before implementation; independent offline review found no actionable issue. This does not add
+  a whole-operation deadline; the existing per-socket timeout remains.
+- Fresh complete suites through PR #28: Person 2 **274 passed**, Person 3 **55 passed**, Person 1 **43 passed**;
+  mock evaluations **3/3 structural goldens + 5/5 exact matches**. Existing Starlette deprecation warning
+  remains. CI supplies Docker image verification; Docker is unavailable locally.
+- Email request-boundary implementation is on `hardening/inbound-request-boundary`: incremental bounded
+  buffering stops at the first oversized chunk; malformed/non-ASCII HMAC headers return 401 before comparison.
+  Synthetic ASGI tests: **18 failed / 5 passed** before the fix, **23 passed** afterward. Parent full-platform
+  verification passed **297 platform tests**; UI **55 passed**, AI **43 passed**, mock evals **3/3 + 5/5**.
+  Independent review found no remaining actionable issue; PR/CI integration is pending.
+  Verification commands used the suites above with workspace `--basetemp=.pytest-inbound-platform`,
+  `.pytest-inbound-control`, `.pytest-inbound-ai`, and mock report `.pytest-inbound-ai/eval_report.md`.
+  Do not claim this branch integrated until its PR has green CI. Accepted bodies remain buffered for HMAC/MIME
+  parsing, with a brief bounded byte-copy; proxy/server limits still matter.
+- **Supabase unchanged:** no SQL, migrations, Auth users/invites, hosted settings, provider calls or emails.
+  No secret values were read/printed; no Person 4 edits. Presence-only private configuration check still
+  found S3, Supabase and Resend keys missing/placeholders. Owner maker/provider-PII/statements questions
+  remain unanswered, as do deployment inputs in the Owner checklist. Never guess those decisions.
+- Keep the owner's **5% remaining** hand-back rule. Current usage was above that threshold; do not repeat
+  completed tests simply to spend credits. Finish/push the bounded active branch, then resume the first
+  newly owner-unblocked item. Update this section before stopping; no uncommitted work may remain.
