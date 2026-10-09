@@ -35,6 +35,11 @@ Claude does the same in reverse when handing to you.
   `finledger_app` (the code refuses others via `assert_rls_applies`).
 - Never claim "production ready" while open items below remain.
 - Be explicit about what is live, local-only, untested, or blocked.
+- **Owner rule (hard): no AI attribution in Git.** Never add `Co-authored-by`, `Claude-Session`, "Generated with …"
+  lines, or an AI author identity (e.g. `Claude <noreply@anthropic.com>`) to commits, PR titles/bodies or comments.
+  Commit as the owner (`git config user.name ryanshaon`,
+  `git config user.email 250547248+ryanshaon@users.noreply.github.com`). Check `git log -1 --format='%an <%ae>%n%b'`
+  before every push.
 
 ## Repository
 
@@ -55,9 +60,10 @@ PYTHONPATH=person2_platform/src:person3_control_ui/src person3_control_ui/.venv/
 docker build -t finledger:ci .        # CI "image" job
 ```
 
-As of merged PR #10: Person 2 **131 passed** and Person 3 **43 passed** locally; PRs #7–#10 had green
-`test` + `image` CI. Person 1 baseline was 41 passed and evals 3/3 + 5/5 before the readiness guard;
-re-run exact counts after subsequent merges.
+Baseline as of merged PR #15: Person 1 **43 passed**, evals 3/3 + 5/5, Person 2 **166 passed**, Person 3
+**50 passed**; `test` + `image` CI green. Re-run exact counts after later merges.
+- Cloud containers: PostgreSQL may be installed but not on PATH. Use
+  `export PATH=/usr/lib/postgresql/16/bin:$PATH`.
 
 - DB tests start a throwaway PostgreSQL via `initdb` (needs PostgreSQL on PATH). As root they run it as the
   `postgres` OS user automatically. On Windows the sandbox used to stall `initdb`: prefer CI or WSL.
@@ -105,142 +111,92 @@ Gotchas:
 | Staging proof tools | `finledger-platform isolation-check`, `finledger-platform s3-smoke` | tested; s3-smoke never run against real Supabase (no valid keys yet) |
 | Runtime image + local stack | `Dockerfile`, `compose.yaml` | built and run: API + control UI healthy, worker up |
 | Control UI entry point | `finledger-control` | uses `make_pool` (RLS guard) and full S3 settings |
-| Auth design | `docs/plans/AUTH_SUPABASE_DESIGN.md` | partially implemented; invite and staging E2E remain |
+| Staff invites + first login | `finledger_platform/staff_invites.py`, Person 3 `/admin/staff`, `/auth/accept` | merged in PR #15; tested offline with fake Auth only. Disabled until `SUPABASE_SECRET_KEY` is set |
+| Auth design | `docs/plans/AUTH_SUPABASE_DESIGN.md` | implemented except staging Auth settings, hosting and real-user E2E |
+
+## ✅ Owner checklist (things only the owner can do)
+
+Tick these off in order. An agent can help explain each step but must never see or type the secret values.
+
+1. **Reset the Windows checkout** (history was rewritten 2026-10-09; see Latest status). In PowerShell, in the
+   repo: commit or stash any local work, then `git fetch origin` and `git reset --hard origin/main`.
+2. **Optional cleanup on GitHub:** delete merged branches `claude/cloud-session-h52oob`, `claude/lucid-faraday-oruuq9`
+   and `handover/*`. They still hold pre-rewrite commits.
+3. **Windows `.env` for S3:** `Copy-Item .env.example .env; notepad .env`, then set `FINLEDGER_STORE=s3`,
+   `FINLEDGER_S3_BUCKET=finledger-documents-dev`,
+   `FINLEDGER_S3_ENDPOINT_URL=https://hxymklwqifwojziewtcv.supabase.co/storage/v1/s3`,
+   `FINLEDGER_S3_REGION=ap-south-1`, `FINLEDGER_S3_ADDRESSING_STYLE=path`, and **type** `AWS_ACCESS_KEY_ID` /
+   `AWS_SECRET_ACCESS_KEY` yourself. `.env` is gitignored; never paste the keys into chat. Then run
+   `finledger-platform s3-smoke` (open item 1).
+4. **Supabase invite setup** (before any real invite), from `AUTH_SUPABASE_DESIGN.md` §3.4:
+   - put `SUPABASE_SECRET_KEY` only in the control UI server's secret settings;
+   - Supabase → Auth → Email templates → *Invite user*: link =
+     `{{ .SiteURL }}/auth/accept?token_hash={{ .TokenHash }}&type=invite`;
+   - set Site URL + redirect allow-list to the control UI origin; turn public sign-ups **off**;
+   - access-token expiry 900 s; enable TOTP MFA; leaked-password protection on.
+5. **Answer three Person 1 questions** (details in `docs/audits/PERSON1_PRODUCTION_READINESS.md`, "Extract consumer"):
+   - a. Who is the "maker" for automated scoring? (Recommended: one non-login "FinLedger automation" user per firm.)
+   - b. Which AI provider/region is allowed, and may invoice text and page images leave FinLedger? Retention and
+     logging rules?
+   - c. Statements: skip for v1 (recommended) or extract?
+6. **Choose a password for the staging app login role** (open item 3) and store it only in secret settings.
+7. **Email:** verify a sender domain in Resend and store the API key in secret settings (open item 4).
+8. **Hosting:** approve an account and budget (open item 5).
 
 ## Open work, in priority order
 
-1. **S3 smoke test against Supabase.** Blocked on the user creating real S3 keys (Supabase → Storage → S3 →
-   New access key) and putting them in environment settings, never in chat. Then
-   `FINLEDGER_STORE=s3 ... finledger-platform s3-smoke`.
-2. **Sign-in (Supabase Auth)**, per `docs/plans/AUTH_SUPABASE_DESIGN.md` section 7:
-   - Migrations `009` private sessions, `010` MFA cookie rekey and `011` migration-history alignment are merged,
-     green in CI and applied to staging. Never re-apply them.
-   - Person 3 `/login`, `/logout`, `/mfa`, and cookie-backed browser routes are merged in PR #9; keep bearer
-     tokens for API/agent routes. Local P2 131 passed and P3 43 passed; staging Auth secrets/settings, real-user
-     E2E, and hosting remain open.
-   - Invite + first-login password set: **implemented in PR #15** (offline-tested, fake Auth). Before live use
-     the owner must do the Supabase setup listed in `docs/plans/AUTH_SUPABASE_DESIGN.md` §3.4 (secret key in
-     server settings, Invite email template link, Site URL, sign-ups off).
-   - **Owner decisions answered:** password + TOTP MFA; defer SSO; 8 h absolute and 30 min idle browser sessions.
-     The implementation gates all browser staff on AAL2 and applies the stricter timeouts to all staff.
-3. **App login role on staging** (`fl_app` or similar, member of `finledger_app` + worker roles), password chosen
-   by the user and stored in secret settings; connect via the Supabase **session pooler**.
-4. **Email**: Resend outbox delivery is implemented; needs a verified sender domain and key. Inbound domain/webhook
-   integration untested.
-5. **Hosting**: not provisioned. Recommendation: AWS ECS/Fargate in Mumbai, colocated with Supabase `ap-south-1`
-   (Render is the simple alternative). Image is ready. Needs account + approval before paid resources.
-6. **Person 1**: audit recorded in `docs/audits/PERSON1_PRODUCTION_READINESS.md` (PR #11 merged). Live provider,
-   persistent RAG/usage/cap state, extract queue consumer and PII policy remain release blockers. Mock evals are
-   not production AI readiness. The audit now has a **documentation-only** extract-consumer plan with three owner
-   decisions: a system maker identity for automated scoring, provider/PII data flow, and statement handling.
-   Packaging `packages/` into the runtime image is a prerequisite that needs no policy decision.
-7. **Windows `.env` (reminder for ChatGPT/Codex, next session on the PC):** the owner created real Supabase S3 keys
-   and put them only in the Claude cloud environment settings. The Windows checkout has **no `.env`** yet. Help the
-   owner run `Copy-Item .env.example .env; notepad .env` and add `FINLEDGER_STORE=s3`,
-   `FINLEDGER_S3_BUCKET=finledger-documents-dev`,
-   `FINLEDGER_S3_ENDPOINT_URL=https://hxymklwqifwojziewtcv.supabase.co/storage/v1/s3`,
-   `FINLEDGER_S3_REGION=ap-south-1`, `FINLEDGER_S3_ADDRESSING_STYLE=path`, and **the owner types**
-   `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` themselves. Never read, print or commit the values; `.env` is gitignored.
-8. **Performance**: Supabase advisor now lists 28 unindexed foreign keys (the extra one is the new private
-   `staff_session_events.user_id` FK) and 13 “unused” indexes on this empty database. Prioritize indexes from
-   real query plans and FK delete/update costs; do not drop useful indexes based on zero-data statistics.
+| # | Item | State | Blocked on |
+|---|---|---|---|
+| 1 | **S3 smoke test against Supabase** (`FINLEDGER_STORE=s3 … finledger-platform s3-smoke`) | code ready, never run live | owner checklist 3 |
+| 2 | **Sign-in staging E2E** (Playwright: invite → set password → login → TOTP → client list) | all code merged (PRs #7–#9, #15); migrations 009–011 applied, **never re-apply** | owner checklist 4 + hosting |
+| 3 | **App login role on staging** (`fl_app`-style, member of `finledger_app` + worker roles, via the Supabase **session pooler**) | not created | owner checklist 6 |
+| 4 | **Email delivery** (Resend outbox implemented; inbound webhook untested) | code ready | owner checklist 7 |
+| 5 | **Hosting** (recommendation: AWS ECS/Fargate Mumbai next to Supabase `ap-south-1`; Render is the simple alternative) | image ready | owner checklist 8 |
+| 6 | **Person 1 release blockers:** live provider, extract queue consumer, persistent RAG/usage/cap state, PII policy | plan in the audit (documentation only) | owner checklist 5 (except 6a below) |
+| 6a | **Package Person 1 into the runtime image** | not started | **nothing — next agent task** |
+| 7 | **Performance:** 28 unindexed FKs, 13 "unused" indexes on an empty DB | do not act on zero-data advisor stats | real query plans |
 
----
+Owner decisions already answered (do not re-ask): password + TOTP MFA; SSO deferred; 8 h absolute / 30 min idle
+browser sessions, applied to all staff with AAL2 required before client data.
 
-## Overnight autonomous run (2–3 hours; owner unavailable)
+## ▶️ Next agent task (safe without the owner)
 
-This is the work order for Claude's next unattended session. **The Open work list above remains the product
-priority; this section selects the first items that can safely move without waking the owner.** Read this whole
-file and the linked design/audit before editing. Start from a clean, freshly pulled `main`; never use this
-handover branch as a code-development base after it is merged. If a prior branch or PR is already in flight,
-inspect it first and avoid duplicate work.
+**Package Person 1 (`packages/`) so the runtime image can import it.** No policy decision is needed.
 
-### 0. Operating envelope (first 10 minutes)
+1. Start from a fresh `main`, on a focused branch with a PR. Commit as the owner (see the hard rule above).
+2. Give Person 1 a `pyproject.toml` (or package the existing top-level `packages/*` modules), add it as a path
+   dependency of `person2_platform`, then run `uv lock` in **both** `person2_platform` and `person3_control_ui` and
+   `uv lock --check` both.
+3. Update the `Dockerfile` to copy and install it. Add `python -c "import extract.vision_fallback, usage.model_router"`
+   to the CI `image` job.
+4. Keep `ModelRouter`'s fail-closed guard: mock must still refuse to start when `FINLEDGER_ENV` is staging/production.
+5. Verify: all commands under **How to verify** (record actual counts) and `docker build`. Do **not** build the
+   extract consumer itself until owner checklist 5 is answered.
 
-- `git switch main`, `git pull`, `git status --short --branch`; inspect current PRs and CI before branching.
-- Scope is Persons 1–3 only; never edit `person4_tally/`. Never print or commit `.env`, keys, tokens, passwords,
-  invoice content, or customer data. Do not create paid resources, real users, or send real invites/emails.
-- Every change gets a focused branch, PR, and green CI before merge. Do not push directly to `main`. If GitHub,
-  CI, or credentials are unavailable, push a clearly labeled WIP branch if possible and record the limitation;
-  never claim a change is merged or verified when it is not.
-- Never apply SQL to Supabase without committing the identical migration in the same session. For this run,
-  prefer **offline implementation/tests only**: do not change staging Auth settings, roles, data, or schemas
-  unless a reviewed migration and a non-destructive test plan make the change unambiguously safe.
-- Use the owner's settled decisions: password + TOTP MFA; SSO deferred; 8-hour maximum and 30-minute idle
-  browser sessions. Do not re-open those questions.
-
-### 1. Primary deliverable: safe staff invitation flow (roughly 90–120 minutes)
-
-Implement the remaining Person 2 invitation flow from `docs/plans/AUTH_SUPABASE_DESIGN.md` §3.4/§7 as a
-separate PR. Read `person2_platform/src/finledger_platform/{auth_gateway,supabase_auth,browser_sessions}.py`,
-the existing API/permission patterns and their tests first. Keep the secret/service-role key **server-side only**.
-The API must require a real firm-admin identity with AAL2, authorize within the correct firm, validate roles,
-explicitly bind the returned Auth subject to the intended `users` row, and never auto-link on email/JWT metadata.
-Handle duplicate invites, Auth failures, and DB failures without silently leaving a usable but unlinked account;
-document any compensating action that cannot be atomic across Supabase Auth and Postgres. Preserve bearer-token
-machine/agent paths and existing RLS boundaries. Use a fake Auth transport and local/ephemeral Postgres for tests;
-**do not call the live Supabase invite endpoint** or create a real identity while the owner sleeps.
-
-Acceptance: tests prove unauthorized and AAL1 callers are denied, cross-firm and role escalation are denied,
-the success path binds exactly one Auth subject, retries/duplicates are safe, and failures cannot grant access.
-Run Person 2 and Person 3 suites plus relevant Person 1 contracts. If the flow needs an unanswered policy choice
-or a real secret to finish, implement only the independently testable part, mark the PR/WIP accurately, and move
-to stage 2 without waiting for the owner.
-
-### 2. Secondary deliverable: Person 1 queue boundary (remaining time)
-
-After the invitation PR is green/merged—or if it becomes genuinely blocked—take the first safe slice of the
-P0 extract-consumer blocker in `docs/audits/PERSON1_PRODUCTION_READINESS.md`. Trace the existing `extract` job
-producer, queue claim/ack/retry/dead-letter semantics, Person 1 extraction contract, and tenant context before
-editing. Prefer a narrow, tested worker integration or contract tests that fail clearly until the real pipeline
-is wired. Do not turn on mock AI in staging/production, send invoices to a model provider, claim full extract →
-score → map E2E, or invent a PII/provider policy. Keep each independently verified slice in its own PR.
-
-If there is not enough time for safe code, deliver an exact implementation plan in the audit: entry points,
-data flow, required tenant isolation, retry/dead-letter behavior, test cases and unresolved decisions. Clearly
-label documentation-only output as such. Do not spend the night repeatedly polling blocked S3 keys, email domain,
-hosting, provider/PII approval, or app-role credentials. Do not blanket-create/drop indexes from the empty
-staging database's advisor notices.
-
-### 3. Verification and morning hand-back (reserve final 20–30 minutes)
-
-- Run the relevant commands under **How to verify**, record **actual** pass counts, and check GitHub `test` and
-  `image` jobs for every PR. A previous pass count is a baseline, not proof for a new change.
-- Review the diff for secrets, generated files, accidental Person 4 edits, unsafe SQL, and scope creep. Report
-  whether staging changed; if it did, list exact migration files and evidence. Never say “production ready.”
-- Update **Latest status** with PR links/branches, commits, actual test counts, what remains half-done and what
-  the owner must do. Commit and push this update via a PR too. Finish with a clean checkout on `main`; if work
-  remains unfinished, commit it on `wip/<topic>` with a `WIP:` message, push it and name it in the status.
-- If usage approaches 15% before the timebox ends, invoke the mandatory hand-back protocol above immediately.
-  Do not leave uncommitted files on the PC. A short, truthful handover beats an unverified last-minute feature.
+After that, if the owner has answered checklist 5, follow the consumer design and test list in the audit.
 
 ---
 
 ## Latest status
 
-**2026-10-09, Claude overnight run → next agent.**
+**2026-10-09, Claude → ChatGPT/Codex.** `main` @ `8bf4476` (PR #15 merged). Checkout clean; no WIP branches.
 
-- ⚠️ **`main` history was rewritten at the owner's request** to remove Claude as a commit author/co-author. Every
-  commit ID changed (old tip `8c0aceb` → new tip `a8876ac`). The file tree is identical. The Windows checkout must
-  run `git fetch origin` then `git reset --hard origin/main` (commit or stash local work first). Old remote
-  branches (`claude/cloud-session-h52oob`, `handover/*`) still point at pre-rewrite commits; they are merged and
-  can be deleted. **Owner rule: never add `Co-authored-by`/`Claude-Session` lines or a Claude author identity to
-  commits or PR text in this repo.**
-- PR #15 (branch `claude/lucid-faraday-oruuq9`, not merged; the owner reviews and merges): staff invitations
-  (firm admin + AAL2, re-checked in the DB) and first-login password set. Design and owner setup are in
-  `AUTH_SUPABASE_DESIGN.md` §3.4. Fail-closed order: unlinked pending row → Supabase invite → compare-and-set link,
-  with compensation that never deletes a linked identity. API-token accounts and other firms' emails are never
-  linked by email. Routes live in Person 3 because only the browser session carries `aal`.
-- Local verification (PostgreSQL 16, non-owner `fl_app`): Person 1 `packages evals` **43 passed**; mock evals
-  3/3 + 5/5 (generated report restored, not committed); Person 2 **166 passed** (was 131); Person 3 **50 passed**
-  (was 43). PR #15 `test` job green; `image` green on the first run.
-- Stage 2 (Person 1 extract consumer): **documentation only.** The plan is appended to
-  `docs/audits/PERSON1_PRODUCTION_READINESS.md`. No consumer code was written, because the image lacks `packages/`
-  and system-maker, PII/provider and statement decisions are open.
-- **Supabase staging was not touched.** No SQL, no settings, no identities, no invites sent. No migrations were
-  added. No Person 4 files were edited.
-- Owner to-do: review/merge PR #15; do the §3.4 Supabase setup when ready for staging E2E; answer the three
-  extract-consumer decisions in the audit. Still blocked as before: S3 smoke, app login role, email domain,
-  hosting, live provider.
+- ⚠️ **`main` history was rewritten** at the owner's request to remove Claude as commit author/co-author. Every
+  commit before PR #15 has a new ID (old tip `8c0aceb` → `a8876ac`); the file tree is identical. Any older clone
+  must `git fetch origin && git reset --hard origin/main` (owner checklist 1). Verified: no Claude author,
+  `Co-authored-by` or `Claude-Session` line remains on `main`.
+- **PR #15 merged:** staff invitations (firm admin + AAL2, re-checked in the DB; roles `ap_clerk`/`approver`/`payer`;
+  same-firm clients only) and first-login password set. Fail-closed order: unlinked pending row → Supabase invite →
+  compare-and-set link. Compensation never deletes a linked identity. API-token accounts and other firms' emails are
+  never linked by email. Routes live in Person 3 (`/admin/staff`, `/auth/accept`) because only browser sessions
+  carry `aal`. Offline only: the live invite endpoint was never called.
+- Verified counts (PostgreSQL 16, non-owner `fl_app`): Person 1 `packages evals` **43 passed**; mock evals
+  3/3 + 5/5 (report restored, not committed); Person 2 **166 passed**; Person 3 **50 passed**. PR #15 `test` and
+  `image` CI green on the final commit.
+- Person 1 extract consumer: **documentation-only plan** in `docs/audits/PERSON1_PRODUCTION_READINESS.md`. No
+  consumer code exists.
+- **Supabase staging untouched** this session: no SQL, settings, identities or invites. No new migrations. No
+  Person 4 edits.
+- Do next: the **Next agent task** above. Owner items are in the **Owner checklist**. Never claim production ready.
 
 <!-- Next agent: replace the paragraph above with your own status when you hand back. Keep it short and exact. -->
