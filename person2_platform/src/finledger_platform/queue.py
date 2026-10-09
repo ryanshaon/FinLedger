@@ -7,10 +7,10 @@ Any seat's worker loop:
         with tenant(conn, job["client_id"]):     # all real work is RLS-scoped to the job's client
             ...
         finish(conn, job["id"], job["claim_token"], ok=True)
-    except PermanentError as e:
-        finish(conn, job["id"], job["claim_token"], ok=False, error=str(e), permanent=True)
-    except Exception as e:
-        finish(conn, job["id"], job["claim_token"], ok=False, error=repr(e))
+    except PermanentError:
+        finish(conn, job["id"], job["claim_token"], ok=False, error="permanent processing failure", permanent=True)
+    except Exception:
+        finish(conn, job["id"], job["claim_token"], ok=False, error="worker processing failed")
 """
 from __future__ import annotations
 
@@ -47,7 +47,10 @@ def claim(conn: psycopg.Connection, queue: str, lease_seconds: int = 300) -> dic
 
 def finish(conn: psycopg.Connection, job_id: int, claim_token: UUID | str, ok: bool, error: str | None = None,
            permanent: bool = False, retry_seconds: int = 30) -> str | None:
-    """Returns the job's new state ('done' | 'queued' | 'dead'), or None if the lease was lost."""
+    """Return done/queued/dead, or None if the lease was lost.
+
+    Callers must supply fixed, non-sensitive error categories, never raw exception text.
+    """
     row = conn.execute(
         "select finish_job(%s, %s, %s, %s, %s, %s) as state",
         (job_id, claim_token, ok, (error or "")[:2000] or None, permanent, retry_seconds)

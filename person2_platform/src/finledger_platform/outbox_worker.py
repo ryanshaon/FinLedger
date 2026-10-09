@@ -49,6 +49,15 @@ def _message(row: dict) -> tuple[str, str]:
 
 
 def run_once(conn: psycopg.Connection, client_id: UUID | str, sender: Sender) -> str | None:
+    """Deliver one reply without exposing failed provider/DB payloads in stderr."""
+    try:
+        return _deliver_once(conn, client_id, sender)
+    except Exception:
+        # This also covers rollback/settlement errors after a sensitive sender exception.
+        raise RuntimeError("outbox worker operation failed") from None
+
+
+def _deliver_once(conn: psycopg.Connection, client_id: UUID | str, sender: Sender) -> str | None:
     """Send at most one queued reply; return sent, failed, or None when idle.
 
     FOR UPDATE SKIP LOCKED prevents concurrent sends. A crash after provider
@@ -65,7 +74,8 @@ def run_once(conn: psycopg.Connection, client_id: UUID | str, sender: Sender) ->
             subject, body = _message(row)
             sender(row["to_addr"], subject, body, f"finledger-outbox-{client_id}-{row['id']}")
         except Exception:
-            log.exception("outbox delivery failed for row %s", row["id"])
+            # Provider exceptions can include recipients, message bodies and credentials.
+            log.error("outbox delivery failed for row %s", row["id"])
             conn.execute("update outbox set state = 'failed' where id = %s and state = 'queued'", (row["id"],))
             return "failed"
         conn.execute("update outbox set state = 'sent' where id = %s and state = 'queued'", (row["id"],))
