@@ -21,6 +21,7 @@ from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Query, 
 from fastapi.responses import HTMLResponse, JSONResponse, Response
 from psycopg.types.json import Jsonb
 from pydantic import BaseModel, Field
+from starlette.concurrency import run_in_threadpool
 
 from . import email_in, intake, tenancy, web
 from .config import Settings
@@ -198,10 +199,36 @@ def create_app(settings: Settings, pool, store) -> FastAPI:
 
     # ---------- public: inbound email ----------
 
+    def accept_inbound(parsed: email_in.ParsedEmail, slug: str) -> dict[str, Any]:
+        # Keep acquisition, transaction and release together in one worker thread.
+        with pool.connection() as conn:
+            cid = conn.execute("select client_by_inbound_slug(%s) as id", (slug,)).fetchone()["id"]
+            if cid is None:
+                return {"status": "dropped", "reason": "unknown recipient"}
+
+            meta = {"from": parsed.sender, "sender_domain": parsed.sender_domain, "subject": parsed.subject,
+                    "message_id": parsed.message_id, "recipient": settings.inbound_address(slug), "auth": parsed.auth,
+                    "phish_reasons": parsed.phish_reasons}
+            with tenant(conn, cid):
+                receipt = intake.accept(conn, store, cid, "email", parsed.attachments, meta,
+                                        intake_key=parsed.intake_key, phish_flag=parsed.phish_flag)
+                replayed = bool(receipt.received) and all(r.get("replayed") for r in receipt.received)
+                # Reply only to authenticated senders (no backscatter to spoofed addresses) and only once per message.
+                if parsed.sender and not parsed.phish_flag and not replayed:
+                    template = "received" if receipt.received else "resubmit"
+                    reasons = receipt.rejected or ([] if parsed.attachments else
+                                                   [{"filename": "", "reason": "no invoice attached"}])
+                    conn.execute(
+                        "insert into outbox (client_id, document_id, to_addr, template, payload) values (%s, %s, %s, %s, %s)",
+                        (cid, receipt.received[0]["document_id"] if receipt.received else None, parsed.sender, template,
+                         Jsonb({"subject": parsed.subject, "received": receipt.received,
+                                "rejected": reasons})))
+            return {"status": "accepted" if receipt.received else "rejected",
+                    "received": receipt.received, "rejected": receipt.rejected}
+
     @app.post("/inbound/email")
     async def inbound_email(request: Request, to: str | None = Query(default=None),
-                            x_finledger_signature: str | None = Header(default=None),
-                            conn: psycopg.Connection = Depends(conn_dep)):
+                            x_finledger_signature: str | None = Header(default=None)):
         buffered = bytearray()
         async for chunk in request.stream():
             if len(buffered) + len(chunk) > MAX_EMAIL_BYTES:
@@ -220,30 +247,10 @@ def create_app(settings: Settings, pool, store) -> FastAPI:
         parsed = email_in.parse(raw, settings.inbound_authserv_id)
         candidates = ([to] if to else []) + parsed.recipients
         slug = next((s for a in candidates if (s := email_in.slug_from_address(a, settings.inbound_domain))), None)
-        cid = conn.execute("select client_by_inbound_slug(%s) as id", (slug,)).fetchone()["id"] if slug else None
-        if cid is None:
+        if slug is None:
             # 200 so the provider does not retry; there is no second inbox to fall back to.
             return {"status": "dropped", "reason": "unknown recipient"}
-
-        meta = {"from": parsed.sender, "sender_domain": parsed.sender_domain, "subject": parsed.subject,
-                "message_id": parsed.message_id, "recipient": settings.inbound_address(slug), "auth": parsed.auth,
-                "phish_reasons": parsed.phish_reasons}
-        with tenant(conn, cid):
-            receipt = intake.accept(conn, store, cid, "email", parsed.attachments, meta,
-                                    intake_key=parsed.intake_key, phish_flag=parsed.phish_flag)
-            replayed = bool(receipt.received) and all(r.get("replayed") for r in receipt.received)
-            # Reply only to authenticated senders (no backscatter to spoofed addresses) and only once per message.
-            if parsed.sender and not parsed.phish_flag and not replayed:
-                template = "received" if receipt.received else "resubmit"
-                reasons = receipt.rejected or ([] if parsed.attachments else
-                                               [{"filename": "", "reason": "no invoice attached"}])
-                conn.execute(
-                    "insert into outbox (client_id, document_id, to_addr, template, payload) values (%s, %s, %s, %s, %s)",
-                    (cid, receipt.received[0]["document_id"] if receipt.received else None, parsed.sender, template,
-                     Jsonb({"subject": parsed.subject, "received": receipt.received,
-                                               "rejected": reasons})))
-        return {"status": "accepted" if receipt.received else "rejected",
-                "received": receipt.received, "rejected": receipt.rejected}
+        return await run_in_threadpool(accept_inbound, parsed, slug)
 
     # ---------- public: signed downloads (local store) ----------
 

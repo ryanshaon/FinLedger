@@ -67,8 +67,8 @@ PYTHONPATH=person2_platform/src:person3_control_ui/src person3_control_ui/.venv/
 docker build -t finledger:ci .        # CI "image" job
 ```
 
-Verified baseline through PR #28: Person 1 **43 passed**, evals **3/3 + 5/5**, Person 2 **274 passed**,
-Person 3 **55 passed**; `test` + `image` CI green on `dd60ef9`. Re-run exact counts after code changes.
+Verified baseline through PR #29: Person 1 **43 passed**, evals **3/3 + 5/5**, Person 2 **297 passed**,
+Person 3 **55 passed**; `test` + `image` CI green on `bef822e`. Re-run exact counts after code changes.
 - Cloud containers: PostgreSQL may be installed but not on PATH. Use
   `export PATH=/usr/lib/postgresql/16/bin:$PATH`.
 
@@ -172,7 +172,8 @@ Tick these off in order. An agent can help explain each step but must never see 
 | 6g | **Signed-download validation and safe filenames** | PR #27 integrated after independent review and green CI | none; local-store boundary only |
 | 6h | **Storage smoke failure/report accuracy** | PR #27 integrated after independent review and green CI | no keys needed for code tests; live smoke still blocked |
 | 6i | **Strict bounded scanner response validation** | PR #28 integrated after independent review and green CI | none; no migration or hosted changes |
-| 6j | **Email webhook request boundary** | implemented on `hardening/inbound-request-boundary`; full verification and CI pending | none; live email remains blocked |
+| 6j | **Email webhook request boundary** | PR #29 integrated after independent review and green CI | none; live email remains blocked |
+| 6k | **Aggregate scanner deadline and post-auth email DB acquisition** | active on `hardening/runtime-resource-boundaries`; final verification pending | none; no hosted changes |
 | 7 | **Performance:** 28 unindexed FKs, 13 "unused" indexes on an empty DB | do not act on zero-data advisor stats | real query plans |
 
 Owner decisions already answered (do not re-ask): password + TOTP MFA; SSO deferred; 8 h absolute / 30 min idle
@@ -182,7 +183,8 @@ browser sessions, applied to all staff with AAL2 required before client data.
 
 **Packaging (PR #17), worker diagnostic sanitization (PR #18), form input hardening (PR #21) and browser MFA
 cookie assurance (PR #22), scanner configuration/logging guards (PRs #25/#26), signed downloads/storage
-proof reports (PR #27), and strict scanner protocol validation (PR #28) are implemented and verified. Do not repeat them.** The remaining Open work items need credentials, configuration, an approved hosting account/budget,
+proof reports (PR #27), strict scanner protocol validation (PR #28), and email request limits (PR #29)
+are implemented and verified. Do not repeat them.** The remaining Open work items need credentials, configuration, an approved hosting account/budget,
 owner policy decisions, or real query plans. Start from current `main` and inspect the linked PRs before editing.
 
 **Metadata correction completed with explicit owner approval:** PR #19 had green `test` and `image` checks
@@ -214,8 +216,8 @@ every completed or WIP change. No uncommitted implementation may remain on the P
 
 **2026-10-09 — local production-boundary hardening; no deployment performed.**
 
-- Main includes PRs #24–#28 with green `test` and `image` CI. Current published application tip is
-  `dd60ef9`; integration used non-forced fast-forwards of reviewed commits with the owner's noreply identity,
+- Main includes PRs #24–#29 with green `test` and `image` CI. Current published application tip is
+  `bef822e`; integration used non-forced fast-forwards of reviewed commits with the owner's noreply identity,
   without attribution trailers. No additional history rewrite was performed. The historical metadata
   correction and local backup branches are documented above; do not repeat or push those backups.
 - PR #24 adds [DEPLOYMENT_RUNBOOK.md](docs/DEPLOYMENT_RUNBOOK.md), derived from actual CLI/runtime code.
@@ -231,23 +233,38 @@ every completed or WIP change. No uncommitted implementation may remain on the P
   independent review without remaining actionable findings.
 - PR #28 requires complete bounded ClamAV replies and exact clean-result framing. Eight regression cases
   failed before implementation; independent offline review found no actionable issue. This does not add
-  a whole-operation deadline; the existing per-socket timeout remains.
+  a whole-operation deadline; the follow-up branch below addresses the socket-I/O budget.
 - Fresh complete suites through PR #28: Person 2 **274 passed**, Person 3 **55 passed**, Person 1 **43 passed**;
   mock evaluations **3/3 structural goldens + 5/5 exact matches**. Existing Starlette deprecation warning
   remains. CI supplies Docker image verification; Docker is unavailable locally.
-- Email request-boundary implementation is on `hardening/inbound-request-boundary`: incremental bounded
+- PR #29 email request-boundary implementation: incremental bounded
   buffering stops at the first oversized chunk; malformed/non-ASCII HMAC headers return 401 before comparison.
   Synthetic ASGI tests: **18 failed / 5 passed** before the fix, **23 passed** afterward. Parent full-platform
   verification passed **297 platform tests**; UI **55 passed**, AI **43 passed**, mock evals **3/3 + 5/5**.
-  Independent review found no remaining actionable issue; PR/CI integration is pending.
+  Independent review found no remaining actionable issue; all PR test/image checks passed before integration.
   Verification commands used the suites above with workspace `--basetemp=.pytest-inbound-platform`,
   `.pytest-inbound-control`, `.pytest-inbound-ai`, and mock report `.pytest-inbound-ai/eval_report.md`.
-  Do not claim this branch integrated until its PR has green CI. Accepted bodies remain buffered for HMAC/MIME
+  Accepted bodies remain buffered for HMAC/MIME
   parsing, with a brief bounded byte-copy; proxy/server limits still matter.
 - **Supabase unchanged:** no SQL, migrations, Auth users/invites, hosted settings, provider calls or emails.
   No secret values were read/printed; no Person 4 edits. Presence-only private configuration check still
   found S3, Supabase and Resend keys missing/placeholders. Owner maker/provider-PII/statements questions
   remain unanswered, as do deployment inputs in the Owner checklist. Never guess those decisions.
+- Active follow-up `hardening/runtime-resource-boundaries`: aggregate scanner socket-I/O deadline has
+  **17 failed / 1 passed** regression cases before implementation and **18 passed** afterward; first full
+  platform verification **315 passed**. System DNS may overrun connection timeout, but late completion is
+  rejected. A synthetic ASGI review reproduced unauthenticated email uploads holding DB connections
+  before HMAC validation; the post-auth/threadpool fix has **14 expected red failures**, then **37 focused
+  tests passed** with real ASGI dependency ordering and worker threads. Independent review of both fixes
+  found no remaining actionable issue. Scanner protocol tests now require a complete INSTREAM request,
+  actual reply transmission and propagated server-thread failures. Three harness regression tests failed
+  before the fix; **30 scanner/deadline focused tests passed** afterward on real local loopback, without
+  thread warnings. This prevents a network-denied run from falsely passing on connection failure.
+  Final complete suites: **333 platform / 55 UI / 43 AI passed**, mock evaluations **3/3 + 5/5**,
+  with only the existing Starlette warning. Commands used the suites above with workspace basetemps
+  `.pytest-resource-final-platform`, `.pytest-resource-final-control`, `.pytest-resource-final-ai`, and
+  mock report `.pytest-resource-final-ai/eval_report.md`. All implementation is finished and reviewed;
+  PR CI/integration remains pending. Do not reimplement these fixes while their reviewed branch exists.
 - Keep the owner's **5% remaining** hand-back rule. Current usage was above that threshold; do not repeat
   completed tests simply to spend credits. Finish/push the bounded active branch, then resume the first
   newly owner-unblocked item. Update this section before stopping; no uncommitted work may remain.

@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import socket
 import struct
+from math import isfinite
+from time import monotonic
 
 from .config import Settings
 
@@ -14,17 +16,41 @@ class ScannerError(RuntimeError):
 
 
 def clamd_scan(data: bytes, host: str, port: int, timeout: float = 30.0) -> str | None:
-    """Return the signature name if infected, None if clean."""
+    """Return the signature name if infected, None if clean.
+
+    Socket I/O shares a monotonic deadline. System DNS resolution and multiple
+    address attempts can overrun create_connection's timeout; reject late
+    completion rather than promising a hard wall-clock bound.
+    """
+    if not isfinite(timeout) or timeout <= 0:
+        raise ScannerError("invalid clamd timeout")
+    deadline = monotonic() + timeout
+
+    def remaining() -> float:
+        budget = deadline - monotonic()
+        if budget <= 0:
+            raise ScannerError("clamd scan timed out")
+        return budget
+
     try:
-        with socket.create_connection((host, port), timeout=timeout) as s:
-            s.sendall(b"zINSTREAM\0")
+        with socket.create_connection((host, port), timeout=remaining()) as s:
+            remaining()
+
+            def send(payload: bytes) -> None:
+                s.settimeout(remaining())
+                s.sendall(payload)
+                remaining()
+
+            send(b"zINSTREAM\0")
             for i in range(0, len(data), 64 * 1024):
                 chunk = data[i:i + 64 * 1024]
-                s.sendall(struct.pack(">I", len(chunk)) + chunk)
-            s.sendall(struct.pack(">I", 0))
+                send(struct.pack(">I", len(chunk)) + chunk)
+            send(struct.pack(">I", 0))
             reply = b""
             while not reply.endswith(b"\0"):
+                s.settimeout(remaining())
                 buf = s.recv(4096)
+                remaining()
                 if not buf:
                     break
                 reply += buf
@@ -32,6 +58,7 @@ def clamd_scan(data: bytes, host: str, port: int, timeout: float = 30.0) -> str 
                     raise ScannerError("invalid clamd response")
     except OSError as e:
         raise ScannerError(f"clamd unreachable at {host}:{port}: {e}") from e
+    remaining()
     if reply == b"stream: OK\0":
         return None
     if not reply.endswith(b"\0"):

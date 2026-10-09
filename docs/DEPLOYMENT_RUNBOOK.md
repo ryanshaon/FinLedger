@@ -50,6 +50,15 @@ Runtime rules:
   publishable/secret API keys. Keep the bucket private and run the real smoke proof before declaring it ready.
 - Use `FINLEDGER_VIRUS_SCANNER=clamd`; EICAR mode detects only a test signature and is not antivirus.
   A scanner outage must leave documents unscanned and retry ingestion, never permit extraction.
+  Scanning shares a 30-second monotonic socket-I/O budget across connection, upload and response.
+  Late results fail closed. System DNS/multiple-address connection attempts can exceed the socket timeout;
+  this is not a guaranteed wall-clock interrupt. Configure reachable private scanner endpoints and monitor
+  queue age/retries; do not bypass scanning to clear a backlog.
+- Enforce ingress body-size, request-duration and concurrency limits at the deployment boundary.
+  The email webhook buffers at most 40 MiB before parsing, but that is not a total ingress concurrency limit.
+  It borrows a database connection only after valid HMAC authentication and recipient parsing; intake and
+  receipt creation share a tenant transaction in a worker thread. Real inbound-provider delivery remains
+  unverified until the owner supplies its private settings and approves a staging proof.
 - Browser Auth needs `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY` and `FINLEDGER_ENC_KEY`.
   `SUPABASE_SECRET_KEY` is for the control server's invite path only, never browser code or database tenancy.
 - Resend needs a verified domain, `RESEND_FROM_EMAIL` and private `RESEND_API_KEY`. Failed messages require
