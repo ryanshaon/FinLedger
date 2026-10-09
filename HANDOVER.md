@@ -60,8 +60,8 @@ PYTHONPATH=person2_platform/src:person3_control_ui/src person3_control_ui/.venv/
 docker build -t finledger:ci .        # CI "image" job
 ```
 
-Baseline as of merged PR #15: Person 1 **43 passed**, evals 3/3 + 5/5, Person 2 **166 passed**, Person 3
-**50 passed**; `test` + `image` CI green. Re-run exact counts after later merges.
+Verified baseline for PR #18: Person 1 **43 passed**, evals 3/3 + 5/5, Person 2 **177 passed**, Person 3
+**50 passed**; `test` + `image` CI green on implementation commit `2543866`. Re-run exact counts after code changes.
 - Cloud containers: PostgreSQL may be installed but not on PATH. Use
   `export PATH=/usr/lib/postgresql/16/bin:$PATH`.
 
@@ -82,7 +82,6 @@ State verified 2026-10-09:
   `anon`, `authenticated` or `finledger_app`; all have zero rows. Security advisor only reports intentional INFO
   “RLS enabled, no policy” for these two tables and `schema_migrations`.
 - 24 public tables, all RLS on; `anon`/`authenticated`/`service_role` have no table grants (006).
-- Security advisor: only the intentional INFO "RLS enabled, no policy" on `schema_migrations`.
 - Bucket `finledger-documents-dev`: private, 25 MiB limit, 0 policies (intentional: app uses S3 keys), 0 objects.
 - Firms/clients/vendors: 0 rows.
 - Hosted RLS proof (rollback-only) passed under `finledger_app`:
@@ -112,6 +111,7 @@ Gotchas:
 | Runtime image + local stack | `Dockerfile`, `compose.yaml` | image includes installed `finledger-ai` (PR #17); image CI verifies imports, resources and hosted mock guards. No extract consumer |
 | Control UI entry point | `finledger-control` | uses `make_pool` (RLS guard) and full S3 settings |
 | Staff invites + first login | `finledger_platform/staff_invites.py`, Person 3 `/admin/staff`, `/auth/accept` | merged in PR #15; tested offline with fake Auth only. Disabled until `SUPABASE_SECRET_KEY` is set |
+| Worker diagnostic privacy | `worker.py`, `outbox_worker.py`, `tests/test_worker_diagnostics.py` | PR #18: fixed failure categories, no exception payload in worker-owned logs or standard escaping tracebacks; retry/rollback/lease recovery tested |
 | Auth design | `docs/plans/AUTH_SUPABASE_DESIGN.md` | implemented except staging Auth settings, hosting and real-user E2E |
 
 ## ✅ Owner checklist (things only the owner can do)
@@ -157,32 +157,41 @@ Tick these off in order. An agent can help explain each step but must never see 
 | 5 | **Hosting** (recommendation: AWS ECS/Fargate Mumbai next to Supabase `ap-south-1`; Render is the simple alternative) | image ready | owner checklist 8 |
 | 6 | **Person 1 release blockers:** live provider, extract queue consumer, persistent RAG/usage/cap state, PII policy | plan in the audit (documentation only) | owner checklist 5 (except 6a below) |
 | 6a | **Package Person 1 into the runtime image** | implemented and verified in PR #17 | none; no provider or consumer added |
+| 6b | **Worker diagnostic sanitization** | implemented and verified in PR #18 | none; no hosted changes |
 | 7 | **Performance:** 28 unindexed FKs, 13 "unused" indexes on an empty DB | do not act on zero-data advisor stats | real query plans |
 
 Owner decisions already answered (do not re-ask): password + TOTP MFA; SSO deferred; 8 h absolute / 30 min idle
 browser sessions, applied to all staff with AAL2 required before client data.
 
-## ▶️ Next agent task (safe without the owner)
+## ▶️ Next agent task (resume the first owner-unblocked item)
 
-**Person 1 packaging is done (PR #17). Do not repeat it.** The safe remaining code task is to prevent raw
-ingestion exception messages/tracebacks from leaking invoice content or credentials into `jobs.last_error`
-or application logs, as identified in `docs/audits/PERSON1_PRODUCTION_READINESS.md`.
+**Packaging (PR #17) and worker diagnostic sanitization (PR #18) are implemented and verified. Do not repeat
+them.** The remaining Open work items need credentials, configuration, an approved hosting account/budget,
+owner policy decisions, or real query plans. Start from current `main` and inspect the linked PRs before editing.
 
-1. Use a fresh focused branch and PR. Read `worker.py`, `prep.py`, `virus.py` and the queue/ingest tests.
-2. Keep operationally useful fixed error categories; never persist or log the untrusted exception message.
-   Preserve permanent/dead outcomes, retry/backoff and the scanner fail-closed behavior.
-3. Prove with synthetic canary tests that queue diagnostics and captured logs do not contain exception content;
-   run the full Person 2 suite and CI. No hosted SQL or secrets are needed.
+1. If the owner has entered real S3 keys privately, run Open work 1 with the private staging bucket. Do not print
+   environment contents or secret values. Record actual smoke-test results and cleanup; never claim it was run
+   from a configuration-presence check.
+2. If the Auth settings, app login role, private server secrets and runtime are ready, run the real staging
+   invite → password set → login → TOTP → client-list E2E. Continue to use the non-owner app role and explicit
+   Auth-subject binding. Migrations 009–011 are already applied; do not re-apply them.
+3. If all three owner checklist 5 choices are answered, implement the extract consumer from the audit's design
+   and test list on a new branch. The system maker, provider/region/PII rules and statement treatment must be
+   recorded here first. Do not interpret recommended options or unanswered prompts as approval.
+4. If none is unblocked, report the exact missing inputs rather than guessing policies, provisioning paid
+   resources or claiming production readiness. The owner was asked checklist 5's questions asynchronously;
+   no answers were received at the time of this status update.
 
-Then, if the owner has answered checklist 5, follow the consumer design and test list in the audit. Otherwise
-leave the consumer blocked and list the exact missing choices. Packaging is not live AI readiness.
+Keep the owner's **5% remaining** usage hand-back threshold, update Latest status before stopping, and push
+every completed or WIP change. No uncommitted implementation may remain on the PC.
 
 ---
 
 ## Latest status
 
-**2026-10-09, packaging checkpoint.** Started from rewritten `main` @ `4256f6d` (PR #16). Work branch:
-`handover/person1-runtime-packaging`, [PR #17](https://github.com/ryanshaon/FinLedger/pull/17).
+**2026-10-09, completed packaging and worker diagnostics.** [PR #17](https://github.com/ryanshaon/FinLedger/pull/17)
+merged as `cc8b10b`; diagnostic work is delivered in [PR #18](https://github.com/ryanshaon/FinLedger/pull/18)
+on `handover/worker-safe-diagnostics`. Merge only after the final handover commit also has green CI.
 
 - Aligned the clean Windows checkout with rewritten history; retained the old tip only on the local archive
   branch named in owner checklist 1. No user edits or `.env` were overwritten. Commits use the owner's identity
@@ -192,13 +201,23 @@ leave the consumer blocked and list the exact missing choices. Packaging is not 
   with no unrelated dependency upgrades. Docker installs it non-editably; CI tests no longer inject `packages`
   into `PYTHONPATH`. Fixed the exporter's installed import and the Windows test runner's environment selection.
 - Fresh local checks (Python 3.12 / PostgreSQL 18, app-side non-owner test roles): Person 1 **43 passed**;
-  Person 2 **166 passed**; Person 3 **50 passed**. Mock evaluations **3/3 + 5/5**, report written under ignored
+  Person 2 **177 passed** after the diagnostic changes; Person 3 **50 passed**. Mock evaluations **3/3 + 5/5**, report written under ignored
   test output. Both `uv lock --check` commands passed. An isolated standalone wheel, outside the checkout,
   passed **9 imports, 3 prompts, 6 schemas and 2 hosted mock guards**. Windows runner syntax checked.
-- PR #17 `test` and `image` CI passed on implementation commit `91b39c7`, including `docker build` and isolated
-  image checks. Docker is unavailable locally. The handover-only follow-up must also get green CI before merge.
+- PR #17 merged with final `test` and `image` CI green. PR #18 `test` and `image` CI passed on implementation
+  commit `2543866`; its logs confirm **43 / 177 / 50** tests and **3/3 + 5/5** evaluations, plus all installed
+  image resource/guard checks. CI supplies `docker build`; Docker is unavailable locally.
+- Worker failures now use fixed categories in `jobs.last_error`, MIME-based unreadable-document reasons and
+  worker-owned logs. Ingest/outbox outer boundaries suppress standard escaping traceback chains, including
+  processing + DB-settlement double failures. Eleven new synthetic canaries cover payloads, causes/notes,
+  genuine local Postgres settlement errors, rollback, lease recovery, scanner fail-closed behavior and backoff.
+  Original seven leak cases and three settlement cases were confirmed failing before their fixes. Independent
+  reviews found no remaining actionable issue in these changes. This is not a complete PII/provider policy.
 - **Supabase unchanged:** no SQL, settings, identities or invites; no new migrations. No Person 4 edits.
-  No half-done implementation. The consumer remains documentation only and blocked on owner checklist 5;
-  S3/Auth/email/hosting still need the listed owner inputs. Next safe task: ingestion diagnostic sanitization above.
+  No half-done implementation or WIP branch. The consumer remains documentation only and blocked on owner
+  checklist 5. A private Windows config check returned presence/placeholder flags only: S3 credentials,
+  Supabase publishable/secret keys and Resend key are missing or placeholders; the encryption key is present
+  but was not validated. No secret value was displayed and no live smoke, invite or provider call was attempted.
+  Follow Next agent task when the owner supplies the listed inputs; all code changes must still use PR + green CI.
 
 <!-- Next agent: replace the paragraph above with your own status when you hand back. Keep it short and exact. -->

@@ -30,7 +30,7 @@ def test_scanner_outage_retries_then_poisons(world, client, conn, store, setting
         make_due(owner)
     assert states == ["queued", "queued", "dead"]
     [job] = jobs(conn, world.a["id"], "ingest")
-    assert job["state"] == "dead" and "clamd unreachable" in job["last_error"] and job["attempts"] == 3
+    assert job["state"] == "dead" and job["last_error"] == "virus scanner unavailable" and job["attempts"] == 3
     assert jobs(conn, world.a["id"], "extract") == []
     with tenant(conn, world.a["id"]):
         d = conn.execute("select virus_ok, status from documents where id = %s", (doc["document_id"],)).fetchone()

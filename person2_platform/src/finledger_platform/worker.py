@@ -17,13 +17,34 @@ from typing import Any
 import psycopg
 from psycopg.types.json import Jsonb
 
-from . import prep, virus
+from . import files, prep, virus
 from .config import Settings
 from .db import tenant
 from .queue import PermanentError, claim, enqueue, finish
 from .store import object_key
 
 log = logging.getLogger("finledger.ingest")
+
+
+def _retry_reason(error: Exception) -> str:
+    """Only fixed diagnostic categories may cross the worker boundary."""
+    if isinstance(error, virus.ScannerError):
+        return "virus scanner unavailable"
+    if isinstance(error, psycopg.Error):
+        return "ingestion database operation failed"
+    if isinstance(error, OSError):
+        return "ingestion I/O failed"
+    return "ingestion processing failed"
+
+
+def _unreadable_reason(mime: str) -> str:
+    return {
+        files.PDF: "unreadable PDF",
+        files.JPEG: "unreadable image",
+        files.PNG: "unreadable image",
+        files.XLSX: "unreadable spreadsheet",
+        files.CSV: "unreadable spreadsheet",
+    }.get(mime, "unreadable file")
 
 
 def extract_payload(doc: dict, assets: list[dict]) -> dict[str, Any]:
@@ -71,10 +92,10 @@ def process_ingest(conn: psycopg.Connection, store, settings: Settings, job: dic
 
     try:
         prepared = prep.prepare(data, doc["mime"], settings.render_page_cap)
-    except PermanentError as e:
+    except PermanentError:
         with tenant(conn, client_id):
             conn.execute("""update documents set status = 'exception', virus_ok = true, status_reason = %s,
-                            updated_at = now() where id = %s""", (str(e), doc_id))
+                            updated_at = now() where id = %s""", (_unreadable_reason(doc["mime"]), doc_id))
         return "exception"
 
     # Objects first (idempotent overwrites), then one transaction for rows + the extract job.
@@ -116,17 +137,28 @@ def load_extract_input(conn: psycopg.Connection, store, job: dict) -> dict[str, 
 
 
 def run_once(conn: psycopg.Connection, store, settings: Settings) -> str | None:
+    """Keep claim, processing and settlement failures safe for the worker's stderr."""
+    try:
+        return _run_once(conn, store, settings)
+    except Exception:
+        # A second DB error must not chain the original sensitive processing exception.
+        raise RuntimeError("ingest worker operation failed") from None
+
+
+def _run_once(conn: psycopg.Connection, store, settings: Settings) -> str | None:
     job = claim(conn, "ingest")
     if job is None:
         return None
     try:
         outcome = process_ingest(conn, store, settings, job)
-    except PermanentError as e:
-        finish(conn, job["id"], job["claim_token"], ok=False, error=str(e), permanent=True)
+    except PermanentError:
+        finish(conn, job["id"], job["claim_token"], ok=False, error="permanent ingestion failure", permanent=True)
         return "dead"
     except Exception as e:  # scanner down, store hiccup, DB blip: retry, then poison
-        log.exception("ingest job %s failed", job["id"])
-        return finish(conn, job["id"], job["claim_token"], ok=False, error=f"{type(e).__name__}: {e}")
+        reason = _retry_reason(e)
+        # Exception messages, chained causes and notes may contain invoice data or credentials.
+        log.error("ingest job %s failed: %s", job["id"], reason)
+        return finish(conn, job["id"], job["claim_token"], ok=False, error=reason)
     finish(conn, job["id"], job["claim_token"], ok=True)
     return outcome
 
