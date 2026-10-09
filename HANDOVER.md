@@ -8,7 +8,7 @@ Whoever is working updates the "Latest status" section and pushes it before stop
 
 ## 🔁 Hand-back protocol (MANDATORY, read first)
 
-When your credits/usage are running low (**start this at ~15% remaining, not at 0%**):
+When your credits/usage are running low (**owner's updated threshold: start at ~5% remaining, not at 0%**):
 
 1. **Stop starting new work.** Finish or cleanly park the current change.
 2. **Commit everything.** Nothing may stay uncommitted on the Windows machine. The last handover lost
@@ -53,8 +53,8 @@ Claude does the same in reverse when handing to you.
 ```bash
 uv sync --project person2_platform --python 3.12 --locked --all-extras --dev
 uv sync --project person3_control_ui --python 3.12 --locked --dev
-PYTHONPATH=packages:evals person2_platform/.venv/bin/python -m pytest packages evals -q
-PYTHONPATH=packages:evals person2_platform/.venv/bin/python evals/run_evals.py --provider-mode mock
+PYTHONPATH=evals person2_platform/.venv/bin/python -m pytest packages evals -q
+PYTHONPATH=evals person2_platform/.venv/bin/python evals/run_evals.py --provider-mode mock
 PYTHONPATH=person2_platform/src person2_platform/.venv/bin/python -m pytest person2_platform/tests -q
 PYTHONPATH=person2_platform/src:person3_control_ui/src person3_control_ui/.venv/bin/python -m pytest person3_control_ui/tests -q
 docker build -t finledger:ci .        # CI "image" job
@@ -109,7 +109,7 @@ Gotchas:
 | Auth subject link 008 | `migrations/008_supabase_auth_subject.sql` | applied on staging. Rule: **never auto-link by email/JWT metadata**; admin links explicitly |
 | Supabase JWT verifier + Auth/session backend | `finledger_platform/supabase_auth.py`, `auth_gateway.py`, `browser_sessions.py` | tested offline and with local Postgres; PRs #7–#9 merged. Browser routes are on `main`, not deployed to staging |
 | Staging proof tools | `finledger-platform isolation-check`, `finledger-platform s3-smoke` | tested; s3-smoke never run against real Supabase (no valid keys yet) |
-| Runtime image + local stack | `Dockerfile`, `compose.yaml` | built and run: API + control UI healthy, worker up |
+| Runtime image + local stack | `Dockerfile`, `compose.yaml` | image includes installed `finledger-ai` (PR #17); image CI verifies imports, resources and hosted mock guards. No extract consumer |
 | Control UI entry point | `finledger-control` | uses `make_pool` (RLS guard) and full S3 settings |
 | Staff invites + first login | `finledger_platform/staff_invites.py`, Person 3 `/admin/staff`, `/auth/accept` | merged in PR #15; tested offline with fake Auth only. Disabled until `SUPABASE_SECRET_KEY` is set |
 | Auth design | `docs/plans/AUTH_SUPABASE_DESIGN.md` | implemented except staging Auth settings, hosting and real-user E2E |
@@ -118,11 +118,14 @@ Gotchas:
 
 Tick these off in order. An agent can help explain each step but must never see or type the secret values.
 
-1. **Reset the Windows checkout** (history was rewritten 2026-10-09; see Latest status). In PowerShell, in the
-   repo: commit or stash any local work, then `git fetch origin` and `git reset --hard origin/main`.
+1. **Windows checkout aligned (completed 2026-10-09).** This checkout now follows rewritten `origin/main`;
+   the pre-rewrite history is preserved locally at `archive/pre-history-rewrite-20261009` and was not pushed.
+   Do not reset again just to repeat this checklist. For any other older clone, preserve local work before
+   aligning it with rewritten `origin/main`.
 2. **Optional cleanup on GitHub:** delete merged branches `claude/cloud-session-h52oob`, `claude/lucid-faraday-oruuq9`
    and `handover/*`. They still hold pre-rewrite commits.
-3. **Windows `.env` for S3:** `Copy-Item .env.example .env; notepad .env`, then set `FINLEDGER_STORE=s3`,
+3. **Windows `.env` for S3:** copy `.env.example` only if `.env` does not exist, then open `.env` yourself;
+   never overwrite existing credentials with the example. Set `FINLEDGER_STORE=s3`,
    `FINLEDGER_S3_BUCKET=finledger-documents-dev`,
    `FINLEDGER_S3_ENDPOINT_URL=https://hxymklwqifwojziewtcv.supabase.co/storage/v1/s3`,
    `FINLEDGER_S3_REGION=ap-south-1`, `FINLEDGER_S3_ADDRESSING_STYLE=path`, and **type** `AWS_ACCESS_KEY_ID` /
@@ -153,7 +156,7 @@ Tick these off in order. An agent can help explain each step but must never see 
 | 4 | **Email delivery** (Resend outbox implemented; inbound webhook untested) | code ready | owner checklist 7 |
 | 5 | **Hosting** (recommendation: AWS ECS/Fargate Mumbai next to Supabase `ap-south-1`; Render is the simple alternative) | image ready | owner checklist 8 |
 | 6 | **Person 1 release blockers:** live provider, extract queue consumer, persistent RAG/usage/cap state, PII policy | plan in the audit (documentation only) | owner checklist 5 (except 6a below) |
-| 6a | **Package Person 1 into the runtime image** | not started | **nothing — next agent task** |
+| 6a | **Package Person 1 into the runtime image** | implemented and verified in PR #17 | none; no provider or consumer added |
 | 7 | **Performance:** 28 unindexed FKs, 13 "unused" indexes on an empty DB | do not act on zero-data advisor stats | real query plans |
 
 Owner decisions already answered (do not re-ask): password + TOTP MFA; SSO deferred; 8 h absolute / 30 min idle
@@ -161,42 +164,41 @@ browser sessions, applied to all staff with AAL2 required before client data.
 
 ## ▶️ Next agent task (safe without the owner)
 
-**Package Person 1 (`packages/`) so the runtime image can import it.** No policy decision is needed.
+**Person 1 packaging is done (PR #17). Do not repeat it.** The safe remaining code task is to prevent raw
+ingestion exception messages/tracebacks from leaking invoice content or credentials into `jobs.last_error`
+or application logs, as identified in `docs/audits/PERSON1_PRODUCTION_READINESS.md`.
 
-1. Start from a fresh `main`, on a focused branch with a PR. Commit as the owner (see the hard rule above).
-2. Give Person 1 a `pyproject.toml` (or package the existing top-level `packages/*` modules), add it as a path
-   dependency of `person2_platform`, then run `uv lock` in **both** `person2_platform` and `person3_control_ui` and
-   `uv lock --check` both.
-3. Update the `Dockerfile` to copy and install it. Add `python -c "import extract.vision_fallback, usage.model_router"`
-   to the CI `image` job.
-4. Keep `ModelRouter`'s fail-closed guard: mock must still refuse to start when `FINLEDGER_ENV` is staging/production.
-5. Verify: all commands under **How to verify** (record actual counts) and `docker build`. Do **not** build the
-   extract consumer itself until owner checklist 5 is answered.
+1. Use a fresh focused branch and PR. Read `worker.py`, `prep.py`, `virus.py` and the queue/ingest tests.
+2. Keep operationally useful fixed error categories; never persist or log the untrusted exception message.
+   Preserve permanent/dead outcomes, retry/backoff and the scanner fail-closed behavior.
+3. Prove with synthetic canary tests that queue diagnostics and captured logs do not contain exception content;
+   run the full Person 2 suite and CI. No hosted SQL or secrets are needed.
 
-After that, if the owner has answered checklist 5, follow the consumer design and test list in the audit.
+Then, if the owner has answered checklist 5, follow the consumer design and test list in the audit. Otherwise
+leave the consumer blocked and list the exact missing choices. Packaging is not live AI readiness.
 
 ---
 
 ## Latest status
 
-**2026-10-09, Claude → ChatGPT/Codex.** `main` @ `8bf4476` (PR #15 merged). Checkout clean; no WIP branches.
+**2026-10-09, packaging checkpoint.** Started from rewritten `main` @ `4256f6d` (PR #16). Work branch:
+`handover/person1-runtime-packaging`, [PR #17](https://github.com/ryanshaon/FinLedger/pull/17).
 
-- ⚠️ **`main` history was rewritten** at the owner's request to remove Claude as commit author/co-author. Every
-  commit before PR #15 has a new ID (old tip `8c0aceb` → `a8876ac`); the file tree is identical. Any older clone
-  must `git fetch origin && git reset --hard origin/main` (owner checklist 1). Verified: no Claude author,
-  `Co-authored-by` or `Claude-Session` line remains on `main`.
-- **PR #15 merged:** staff invitations (firm admin + AAL2, re-checked in the DB; roles `ap_clerk`/`approver`/`payer`;
-  same-firm clients only) and first-login password set. Fail-closed order: unlinked pending row → Supabase invite →
-  compare-and-set link. Compensation never deletes a linked identity. API-token accounts and other firms' emails are
-  never linked by email. Routes live in Person 3 (`/admin/staff`, `/auth/accept`) because only browser sessions
-  carry `aal`. Offline only: the live invite endpoint was never called.
-- Verified counts (PostgreSQL 16, non-owner `fl_app`): Person 1 `packages evals` **43 passed**; mock evals
-  3/3 + 5/5 (report restored, not committed); Person 2 **166 passed**; Person 3 **50 passed**. PR #15 `test` and
-  `image` CI green on the final commit.
-- Person 1 extract consumer: **documentation-only plan** in `docs/audits/PERSON1_PRODUCTION_READINESS.md`. No
-  consumer code exists.
-- **Supabase staging untouched** this session: no SQL, settings, identities or invites. No new migrations. No
-  Person 4 edits.
-- Do next: the **Next agent task** above. Owner items are in the **Owner checklist**. Never claim production ready.
+- Aligned the clean Windows checkout with rewritten history; retained the old tip only on the local archive
+  branch named in owner checklist 1. No user edits or `.env` were overwritten. Commits use the owner's identity
+  without AI attribution. The owner changed the low-usage hand-back threshold to **5% remaining**.
+- Person 1 now ships as the `finledger-ai` wheel: all eight module groups, three prompt resources and six JSON
+  Schemas, with a direct Pydantic dependency. Person 2 installs it; Person 3 inherits it. Both locks refreshed
+  with no unrelated dependency upgrades. Docker installs it non-editably; CI tests no longer inject `packages`
+  into `PYTHONPATH`. Fixed the exporter's installed import and the Windows test runner's environment selection.
+- Fresh local checks (Python 3.12 / PostgreSQL 18, app-side non-owner test roles): Person 1 **43 passed**;
+  Person 2 **166 passed**; Person 3 **50 passed**. Mock evaluations **3/3 + 5/5**, report written under ignored
+  test output. Both `uv lock --check` commands passed. An isolated standalone wheel, outside the checkout,
+  passed **9 imports, 3 prompts, 6 schemas and 2 hosted mock guards**. Windows runner syntax checked.
+- PR #17 `test` and `image` CI passed on implementation commit `91b39c7`, including `docker build` and isolated
+  image checks. Docker is unavailable locally. The handover-only follow-up must also get green CI before merge.
+- **Supabase unchanged:** no SQL, settings, identities or invites; no new migrations. No Person 4 edits.
+  No half-done implementation. The consumer remains documentation only and blocked on owner checklist 5;
+  S3/Auth/email/hosting still need the listed owner inputs. Next safe task: ingestion diagnostic sanitization above.
 
 <!-- Next agent: replace the paragraph above with your own status when you hand back. Keep it short and exact. -->
