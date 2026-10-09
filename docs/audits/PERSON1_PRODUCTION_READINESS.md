@@ -95,8 +95,10 @@ Error mapping:
 | Object key outside `client_id/` | permanent; never read |
 | Lost lease (`finish` returns `None`) | drop result; the next claimant redoes the work |
 
-`last_error` must hold only exception class names and fixed messages, never invoice text. That is a PII rule
-the current ingest worker does not follow (`f"{type(e).__name__}: {e}"`).
+`last_error` must hold only fixed diagnostic categories, never invoice text. PR #18 applies this to the existing
+ingest worker and removes raw exception chains from ingest/outbox worker-owned logs and standard escaping
+tracebacks, including failure during DB settlement. Canary tests prove retry/backoff, rollback and lease recovery.
+The future extract/score consumers must follow the same rule; this does not settle the broader provider PII policy.
 
 ### Tests to write with the consumer (ephemeral Postgres, fake provider)
 
