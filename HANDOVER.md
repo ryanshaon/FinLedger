@@ -172,11 +172,12 @@ browser sessions, applied to all staff with AAL2 required before client data.
 them.** The remaining Open work items need credentials, configuration, an approved hosting account/budget,
 owner policy decisions, or real query plans. Start from current `main` and inspect the linked PRs before editing.
 
-**Metadata review pending:** `handover/owner-commit-metadata` proposes replacing only the two latest published
-commits with owner/noreply identity and no co-author trailers. Application files are identical to `main`
-`03ec760`; only this handover is additionally updated. Do not normally merge that proposal (a normal merge
-would retain the old commits). Do not replace `main` without explicit owner approval and green CI. The expected
-old remote tip is `03ec760f05b5c448302997362619f8e7ef692887`; use an exact lease if approved, and abort if it changed.
+**Metadata correction completed with explicit owner approval:** PR #19 had green `test` and `image` checks
+on `f7cc5ac`. An exact-lease push replaced the expected `03ec760` remote tip with that reviewed tip.
+Replacement commits `d77b124` and `12c93c1` preserve the original application trees and dates, with the
+owner's noreply identity and no attribution trailers. GitHub automatically marked PR #19 merged.
+The original tip remains on local `archive/pre-owner-metadata-correction-20261009`; do not push it.
+Other clones must preserve local work before aligning with the updated history. Do not repeat this rewrite.
 
 1. If the owner has entered real S3 keys privately, run Open work 1 with the private staging bucket. Do not print
    environment contents or secret values. Record actual smoke-test results and cleanup; never claim it was run
@@ -198,19 +199,21 @@ every completed or WIP change. No uncommitted implementation may remain on the P
 
 ## Latest status
 
-**2026-10-09, completed application work; metadata approval pending.**
+**2026-10-09, completed application work and owner-approved metadata correction.**
 [PR #17](https://github.com/ryanshaon/FinLedger/pull/17) and
-[PR #18](https://github.com/ryanshaon/FinLedger/pull/18) merged with final green CI; published `main` is `03ec760`.
-The separate review branch `handover/owner-commit-metadata` repairs only the last two commits' identity/message
-metadata and updates this handover. No shared-history replacement has been performed.
+[PR #18](https://github.com/ryanshaon/FinLedger/pull/18) merged with final green CI.
+[PR #19](https://github.com/ryanshaon/FinLedger/pull/19) passed both CI checks on `f7cc5ac` and is now on
+published `main` after an explicitly approved exact-lease history correction. Application files match
+the original `03ec760` tip exactly; only the handover changed in addition to commit metadata.
 
 - Aligned the clean Windows checkout with rewritten history; retained the old tip only on the local archive
   branch named in owner checklist 1. No user edits or `.env` were overwritten. Local commits use the owner's
   noreply identity without attribution trailers. GitHub's squash defaults added **owner** co-author trailers
   to PRs #17/#18; no AI identity was added, but these violate the literal no-trailer rule. Corrected candidate
-  commits are `d77b124` and `12c93c1`, with identical trees/dates and base `4256f6d`. The original tip is preserved
-  locally at `archive/pre-owner-metadata-correction-20261009`. The candidate is ready for review, not permission
-  to rewrite `main`. The owner changed the low-usage hand-back threshold to **5% remaining**.
+  commits are now `d77b124` and `12c93c1`, with identical trees/dates and base `4256f6d`. The original tip is preserved
+  locally at `archive/pre-owner-metadata-correction-20261009`. The owner explicitly approved the guarded
+  replacement; local main is aligned and its recent metadata was verified. Future squash merges must use
+  the explicit author email and clean body described above. The low-usage hand-back threshold is **5% remaining**.
 - Person 1 now ships as the `finledger-ai` wheel: all eight module groups, three prompt resources and six JSON
   Schemas, with a direct Pydantic dependency. Person 2 installs it; Person 3 inherits it. Both locks refreshed
   with no unrelated dependency upgrades. Docker installs it non-editably; CI tests no longer inject `packages`

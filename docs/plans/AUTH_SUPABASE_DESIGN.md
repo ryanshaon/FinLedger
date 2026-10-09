@@ -84,7 +84,7 @@ Why not keep the reverse-proxy token injection? It pushes login, MFA and session
 
 ## 5. Data model changes (one new migration, `009_...`)
 - `finledger_private.staff_sessions` (migration 009, merged): SHA-256 cookie hash, user_id, Fernet-encrypted access and refresh tokens, access-token expiry, 30-minute idle and 8-hour absolute limits, compare-and-swap version. RLS on, no app/API table grants; narrow private SECURITY DEFINER functions only.
-- `finledger_private.staff_session_events` currently records session start and revocation. Failed-login and MFA audit events are still to be added.
+- `finledger_private.staff_session_events` records session start, revocation and successful MFA verification. Failed-login audit events are not implemented; do not treat these session events as a complete authentication audit trail.
 - Migration 010 adds `mfa_verified` audit events and the atomic cookie-rekey function. Migration 011 aligns the two migration trackers. Both are applied to staging.
 
 ## 6. Configuration
