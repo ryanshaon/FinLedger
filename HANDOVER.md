@@ -67,8 +67,8 @@ PYTHONPATH=person2_platform/src:person3_control_ui/src person3_control_ui/.venv/
 docker build -t finledger:ci .        # CI "image" job
 ```
 
-Verified baseline for PR #18: Person 1 **43 passed**, evals 3/3 + 5/5, Person 2 **177 passed**, Person 3
-**50 passed**; `test` + `image` CI green on implementation commit `2543866`. Re-run exact counts after code changes.
+Verified baseline for PR #22: Person 1 **43 passed**, evals 3/3 + 5/5, Person 2 **181 passed**, Person 3
+**54 passed**; `test` + `image` CI green on implementation commit `f8eaba2`. Re-run exact counts after code changes.
 - Cloud containers: PostgreSQL may be installed but not on PATH. Use
   `export PATH=/usr/lib/postgresql/16/bin:$PATH`.
 
@@ -166,7 +166,7 @@ Tick these off in order. An agent can help explain each step but must never see 
 | 6a | **Package Person 1 into the runtime image** | implemented and verified in PR #17 | none; no provider or consumer added |
 | 6b | **Worker diagnostic sanitization** | implemented and verified in PR #18 | none; no hosted changes |
 | 6c | **Malformed control form inputs** | PR #21 integrated with green CI; four regression cases | none; no hosted changes |
-| 6d | **Browser cookie MFA assurance binding** | implemented locally on `hardening/browser-assurance-binding`; review/CI pending | no owner decision; no migration |
+| 6d | **Browser cookie MFA assurance binding** | PR #22 integrated after independent review and green CI | none; no migration or hosted changes |
 | 7 | **Performance:** 28 unindexed FKs, 13 "unused" indexes on an empty DB | do not act on zero-data advisor stats | real query plans |
 
 Owner decisions already answered (do not re-ask): password + TOTP MFA; SSO deferred; 8 h absolute / 30 min idle
@@ -174,8 +174,8 @@ browser sessions, applied to all staff with AAL2 required before client data.
 
 ## ▶️ Next agent task (resume the first owner-unblocked item)
 
-**Packaging (PR #17) and worker diagnostic sanitization (PR #18) are implemented and verified. Do not repeat
-them.** The remaining Open work items need credentials, configuration, an approved hosting account/budget,
+**Packaging (PR #17), worker diagnostic sanitization (PR #18), form input hardening (PR #21) and browser MFA
+cookie assurance (PR #22) are implemented and verified. Do not repeat them.** The remaining Open work items need credentials, configuration, an approved hosting account/budget,
 owner policy decisions, or real query plans. Start from current `main` and inspect the linked PRs before editing.
 
 **Metadata correction completed with explicit owner approval:** PR #19 had green `test` and `image` checks
@@ -205,18 +205,23 @@ every completed or WIP change. No uncommitted implementation may remain on the P
 
 ## Latest status
 
-**Current follow-up (2026-10-09):** PR #20 documentation and PR #21 form hardening were integrated after
-green test/image CI with non-forced fast-forwards and verified owner metadata. Main is `fdffb2d` at this
-checkpoint. Malformed non-ASCII CSRF values and invalid origin URLs now return 403 instead of crashing;
+**Current follow-up (2026-10-09):** PR #20 documentation, PR #21 form hardening and PR #22 assurance binding
+were integrated after green test/image CI with non-forced fast-forwards and verified owner metadata.
+Main application tip is `f8eaba2`; final handover update branch is `handover/auth-hardening-status`.
+Malformed non-ASCII CSRF values and invalid origin URLs now return 403 instead of crashing;
 all four cases failed before the fix. A session review reproduced an MFA race against temporary local
 Postgres: upstream verification succeeds, a concurrent version change blocks local cookie rekey, and
 refresh previously elevated the old cookie. The fix on `hardening/browser-assurance-binding` encrypts
 local cookie assurance, preserves it through refresh, and grants AAL2 only after successful local rekey
 and a verified AAL2 JWT. Legacy bundles require MFA again; malformed markers are denied. Six assertions
 failed before the fix. Fresh full local suites: Person 1 **43 passed**, mock evals **3/3 + 5/5**; Person 2
-**181 passed**; Person 3 **54 passed**. Existing Starlette deprecation warning remains. Assurance review
-and CI are pending at this checkpoint. No hosted calls/SQL, migrations, credentials, or Person 4 edits.
-The owner inputs in the checklist are still unanswered; do not guess them.
+**181 passed**; Person 3 **54 passed**. The final focused browser suite also passed **10 tests**.
+Existing Starlette deprecation warning remains. Independent assurance review found no remaining actionable
+issue; PR #22's push and PR CI test/image checks passed on exact commit `f8eaba2`. No unfinished implementation,
+WIP branch, hosted calls/SQL, migrations, credential changes, or Person 4 edits. The owner inputs in the
+checklist are still unanswered; do not guess them. Maker/provider-PII/statement questions were posted again
+asynchronously; await explicit answers. Usage was well above the 5% threshold; do not spend credits on
+repeating completed work solely to reach that threshold. Resume the first newly unblocked owner item.
 
 **2026-10-09, completed application work and owner-approved metadata correction.**
 [PR #17](https://github.com/ryanshaon/FinLedger/pull/17) and
