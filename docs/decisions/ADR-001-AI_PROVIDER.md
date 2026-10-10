@@ -1,7 +1,9 @@
 # ADR-001: AI provider and invoice-data boundary
 
-**Status:** Proposed; provider, data transfer, retention and spend are not approved.  
-**Research date:** 2026-10-10 (Asia/Calcutta).  
+**Status:** Proposed; provider, data transfer, retention and spend are not approved.
+
+**Research date:** 2026-10-10 (Asia/Calcutta).
+
 **Decider:** Product owner. Scope: Persons 1–3 only.
 
 ## Executive overview
