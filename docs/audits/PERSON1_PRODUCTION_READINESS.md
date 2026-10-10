@@ -44,6 +44,10 @@ something the runtime cannot run.
 from v1. The owner answered "whichever is better" and delegated those choices. Decision 2 remains research/
 proposal only. The options below retain design context; do not re-ask decisions 1/3 or infer automatic-posting
 permission from the maker choice. No maker row, migration, worker or provider integration was created.
+The owner also permitted minimized invoice text and bounded images under the proposed controls and chose
+to serve both Indian/EU markets, deciding processing locations later. Budget remains undecided. Provider
+activation, location, effective retention and exception/spend gates are still unresolved; do not re-ask input
+modality or interpret dual-market service as cross-border permission.
 
 1. **System maker identity.** Automated extract/score needs an `actor_id`. Options: (a) one non-login
    "FinLedger automation" `users` row per firm (no `auth_subject`, no API token, never a firm admin), or (b) make

@@ -1,6 +1,7 @@
 # ADR-001: AI provider and invoice-data boundary
 
-**Status:** Proposed; provider, data transfer, retention and spend are not approved.
+**Status:** Proposed provider; processing location and spend are unresolved. Minimized text/images are
+permitted under the proposed controls, but no live provider is enabled or approved for use yet.
 
 **Research date:** 2026-10-10 (Asia/Calcutta).
 
@@ -15,6 +16,10 @@ or permission to send invoices. Do not provision paid capacity or enable a live 
 
 Two delegated owner decisions are accepted: one non-login automation maker per firm; bank/account
 statements excluded from v1. These decisions have not yet been implemented in the database or consumers.
+The owner also chose to serve both Indian and EU markets while deciding processing locations later,
+allowed minimized invoice text and bounded images under the proposed controls, and deferred a budget
+decision. Serving both markets does not approve either cross-border processing or country-local routing.
+No spending or live invoice/model calls are authorized from these answers alone.
 
 ## 1. Context and requirements
 
@@ -54,7 +59,11 @@ AWS's Claude 3 Haiku card lists legacy status in certain regions and an EOL date
 despite showing Mumbai support. It is not a safe new-project default without lifecycle clarification.
 [AWS model source](https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-anthropic-claude-3-haiku.html).
 
-## 3. Proposed data policy — requires explicit approval
+## 3. Data boundary and remaining policy gates
+
+The owner selected minimized invoice text and bounded page images under the proposed controls on
+2026-10-10. Provider/model, processing location, effective retention, any safety exceptions and spend
+still need resolution. Do not re-ask the text-versus-image choice or relax these controls to enable a model.
 
 - Permit only invoice/credit-note/debit-note data needed for extraction, mapping and risk checks.
   Include required business identifiers such as GSTIN only when necessary. Strip unnecessary contact,
@@ -125,11 +134,12 @@ docs/decisions/ADR-001-AI_PROVIDER.md     # approved policy and dated evidence
 
 ## 6. Owner approval still needed
 
-1. India-only processing with a separately approved capacity quote, or EU multi-region PayGo with
-   explicitly permitted cross-border invoice processing?
-2. May minimized invoice text and bounded page images leave FinLedger for that chosen service?
-3. Accept the proposed retention/logging controls and document any required safety exceptions?
-4. What monthly ceiling and any upfront capacity commitment are approved?
+1. Processing jurisdiction/routing remains deferred. Serving both markets is the product goal, not an
+   approval to route invoices between them. Finalize endpoint/capacity and permitted processing locations.
+2. Verify that the chosen account/model meets the proposed retention/logging controls. Any exception
+   requiring durable content retention or human content review needs separate explicit approval.
+3. Monthly ceiling and any upfront capacity commitment remain undecided. Keep paid calls disabled;
+   provide a capacity quote and usage assumptions before requesting a budget decision.
 
-Selecting a provider name alone does not answer these four questions. Recheck sources, access and
+Selecting a provider name alone does not answer these questions. Recheck sources, access and
 lifecycle when enabling the adapter. Private credentials must never be pasted into this ADR or chat.

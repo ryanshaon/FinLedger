@@ -149,6 +149,9 @@ Tick these off in order. An agent can help explain each step but must never see 
      maker per firm, with no Auth subject, token or firm-admin privilege. Not yet implemented.
    - b. **Pending approval:** provider, processing jurisdiction, permitted invoice text/images, retention/logging
      exceptions, budget and capacity. Owner requested research, not provider activation. ADR-001 is proposed.
+     **Follow-up:** minimized invoice text and bounded page images are permitted under the proposed controls;
+     serve Indian and EU markets, but decide processing locations later. Budget remains undecided. Do not
+     infer either cross-border permission, country-local routing, a capacity purchase or live-model activation.
    - c. **Decided 2026-10-10:** owner delegated the better choice; exclude bank/account statements from v1
      extraction and handle them as an explicit exception. Not yet implemented in the consumer.
 6. **Choose a password for the staging app login role** (open item 3) and store it only in secret settings.
@@ -225,12 +228,17 @@ v1; neither is implemented yet. Added proposed ADR-001 comparing official Google
 OpenAI documentation, with jurisdiction/retention/lifecycle/capacity caveats and an illustrative cost model.
 Conditional recommendation: Gemini 3.5 Flash, India processing only if its provisioned-capacity quote is
 approved; EU PayGo is a separate cross-border option requiring explicit approval. No provider/data-transfer
-or spending approval is inferred. Branch `docs/ai-provider-options`; documentation only, no local test rerun
+or spending approval is inferred beyond the bounded input choice: owner subsequently permitted minimized
+text and bounded page images under proposed controls, selected serving both markets with processing
+locations decided later, and deferred budget selection. Location, provider activation, account retention and
+exception/spend gates remain unresolved. Do not re-ask maker/statement/input-modality questions.
+Branch `docs/ai-provider-options` (PR #33); documentation only, no local test rerun
 or new test counts claimed. Runtime baseline remains **333 platform / 55 UI / 43 AI**, mock **3/3 + 5/5**.
 No credentials, hosted configuration/SQL, migrations, identities, customer data, email, model calls or Person 4
-changes. Next: owner approves jurisdiction, minimized text/images, retention exceptions and budget; then
+changes. Next: finalize jurisdiction/routing, verify effective retention and resolve exceptions/budget; then
 verify account/capacity before adapter/accounting/consumer implementation. Do not repeat maker/statement
-questions. All edits must be committed/pushed through green PR CI before integration.
+questions. Provider proposal and metadata were checked against official sources; no benchmark or legal
+compliance guarantee is claimed. All edits must be committed/pushed through green PR CI before integration.
 
 **2026-10-10 readiness recheck:** Refreshed clean `main` at `43fbe2f` (PR #31 status update merged).
 Read this handover completely. Presence-only checks still report S3 access/secret keys, Supabase
