@@ -21,8 +21,10 @@ Mock evaluation results remain useful contract checks but do not validate provid
 
 ## Extract consumer: implementation plan (documentation only, 2026-10-09 overnight run)
 
-**Status: plan only. No consumer code was written.** Tracing the current code found three blockers that need owner
-decisions, so wiring a worker now would either guess policy or ship something the runtime cannot run.
+**Status: plan only. No consumer code was written.** Maker and statement choices were delegated by the owner
+and selected on 2026-10-10; provider/data policy and budget remain unapproved. See
+[ADR-001](../decisions/ADR-001-AI_PROVIDER.md). Wiring a live worker now would still guess data policy or ship
+something the runtime cannot run.
 
 ### What exists today (traced)
 
@@ -37,6 +39,11 @@ decisions, so wiring a worker now would either guess policy or ship something th
 | Runtime image | `Dockerfile` installs `packages/` as `finledger-ai`, a locked local dependency of Person 2; PR #17 image CI checks installed modules/resources | packaging gap closed; consumer still absent |
 
 ### Blocking decisions (owner)
+
+**2026-10-10 update:** Decision 1 = per-firm non-login automation maker; decision 3 = exclude statements
+from v1. The owner answered "whichever is better" and delegated those choices. Decision 2 remains research/
+proposal only. The options below retain design context; do not re-ask decisions 1/3 or infer automatic-posting
+permission from the maker choice. No maker row, migration, worker or provider integration was created.
 
 1. **System maker identity.** Automated extract/score needs an `actor_id`. Options: (a) one non-login
    "FinLedger automation" `users` row per firm (no `auth_subject`, no API token, never a firm admin), or (b) make

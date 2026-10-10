@@ -144,11 +144,13 @@ Tick these off in order. An agent can help explain each step but must never see 
      `{{ .SiteURL }}/auth/accept?token_hash={{ .TokenHash }}&type=invite`;
    - set Site URL + redirect allow-list to the control UI origin; turn public sign-ups **off**;
    - access-token expiry 900 s; enable TOTP MFA; leaked-password protection on.
-5. **Answer three Person 1 questions** (details in `docs/audits/PERSON1_PRODUCTION_READINESS.md`, "Extract consumer"):
-   - a. Who is the "maker" for automated scoring? (Recommended: one non-login "FinLedger automation" user per firm.)
-   - b. Which AI provider/region is allowed, and may invoice text and page images leave FinLedger? Retention and
-     logging rules?
-   - c. Statements: skip for v1 (recommended) or extract?
+5. **Approve the remaining AI provider/data policy** (see [ADR-001](docs/decisions/ADR-001-AI_PROVIDER.md)):
+   - a. **Decided 2026-10-10:** owner delegated the better choice; use one non-login "FinLedger automation"
+     maker per firm, with no Auth subject, token or firm-admin privilege. Not yet implemented.
+   - b. **Pending approval:** provider, processing jurisdiction, permitted invoice text/images, retention/logging
+     exceptions, budget and capacity. Owner requested research, not provider activation. ADR-001 is proposed.
+   - c. **Decided 2026-10-10:** owner delegated the better choice; exclude bank/account statements from v1
+     extraction and handle them as an explicit exception. Not yet implemented in the consumer.
 6. **Choose a password for the staging app login role** (open item 3) and store it only in secret settings.
 7. **Email:** verify a sender domain in Resend and store the API key in secret settings (open item 4).
 8. **Hosting:** approve an account and budget (open item 5).
@@ -178,6 +180,8 @@ Tick these off in order. An agent can help explain each step but must never see 
 
 Owner decisions already answered (do not re-ask): password + TOTP MFA; SSO deferred; 8 h absolute / 30 min idle
 browser sessions, applied to all staff with AAL2 required before client data.
+Also decided: per-firm non-login automation maker and statement exclusion for v1. These two choices do not
+approve a live provider, invoice transfer, paid resources or automatic posting/payment.
 
 ## ▶️ Next agent task (resume the first owner-unblocked item)
 
@@ -201,12 +205,12 @@ Other clones must preserve local work before aligning with the updated history. 
 2. If the Auth settings, app login role, private server secrets and runtime are ready, run the real staging
    invite → password set → login → TOTP → client-list E2E. Continue to use the non-owner app role and explicit
    Auth-subject binding. Migrations 009–011 are already applied; do not re-apply them.
-3. If all three owner checklist 5 choices are answered, implement the extract consumer from the audit's design
-   and test list on a new branch. The system maker, provider/region/PII rules and statement treatment must be
-   recorded here first. Do not interpret recommended options or unanswered prompts as approval.
+3. Maker and statement choices are recorded in checklist 5. Once its remaining provider/processing/data-policy
+   and spend gates are explicitly approved, implement the adapter/accounting and extract consumer from the
+   audit/ADR design and test lists on a new branch. Research authorization is not activation approval.
 4. If none is unblocked, report the exact missing inputs rather than guessing policies, provisioning paid
-   resources or claiming production readiness. The owner was asked checklist 5's questions asynchronously;
-   no answers were received at the time of this status update.
+   resources or claiming production readiness. The provider proposal is researched; ask only the remaining
+   ADR approval questions, not the already-decided maker/statement questions.
 
 Keep the owner's **5% remaining** usage hand-back threshold, update Latest status before stopping, and push
 every completed or WIP change. No uncommitted implementation may remain on the PC.
@@ -214,6 +218,19 @@ every completed or WIP change. No uncommitted implementation may remain on the P
 ---
 
 ## Latest status
+
+**2026-10-10 owner decisions and provider research:** Owner delegated maker and statement choices and
+asked to research AI providers. Selected per-firm non-login automation maker and statement exclusion for
+v1; neither is implemented yet. Added proposed ADR-001 comparing official Google Cloud, Bedrock and
+OpenAI documentation, with jurisdiction/retention/lifecycle/capacity caveats and an illustrative cost model.
+Conditional recommendation: Gemini 3.5 Flash, India processing only if its provisioned-capacity quote is
+approved; EU PayGo is a separate cross-border option requiring explicit approval. No provider/data-transfer
+or spending approval is inferred. Branch `docs/ai-provider-options`; documentation only, no local test rerun
+or new test counts claimed. Runtime baseline remains **333 platform / 55 UI / 43 AI**, mock **3/3 + 5/5**.
+No credentials, hosted configuration/SQL, migrations, identities, customer data, email, model calls or Person 4
+changes. Next: owner approves jurisdiction, minimized text/images, retention exceptions and budget; then
+verify account/capacity before adapter/accounting/consumer implementation. Do not repeat maker/statement
+questions. All edits must be committed/pushed through green PR CI before integration.
 
 **2026-10-10 readiness recheck:** Refreshed clean `main` at `43fbe2f` (PR #31 status update merged).
 Read this handover completely. Presence-only checks still report S3 access/secret keys, Supabase
