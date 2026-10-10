@@ -215,6 +215,16 @@ every completed or WIP change. No uncommitted implementation may remain on the P
 
 ## Latest status
 
+**2026-10-10 readiness recheck:** Refreshed clean `main` at `43fbe2f` (PR #31 status update merged).
+Read this handover completely. Presence-only checks still report S3 access/secret keys, Supabase
+publishable/secret keys and Resend key as missing/placeholders; no secret values were displayed.
+Owner checklist 5's maker, AI provider/region/data-retention policy and statement choices remain unanswered;
+hosting approval, Auth setup and app-login password remain owner gates. No newly unblocked Open work item.
+No application changes, fresh test counts, hosted calls/SQL, migrations, identities, email or Person 4 edits.
+The verified **333 platform / 55 UI / 43 AI** counts below are from the previous completed batch, not rerun
+today. Resume the first owner-unblocked item; do not repeat completed hardening or consume credits simply
+to reach the 5% threshold. Today's status branch is `handover/owner-gates-20261010`.
+
 **2026-10-09 — local production-boundary hardening; no deployment performed.**
 
 - Main includes PRs #24–#30 with green `test` and `image` CI. Current published application tip is
@@ -271,5 +281,5 @@ every completed or WIP change. No uncommitted implementation may remain on the P
 - Keep the owner's **5% remaining** hand-back rule. Current usage was above that threshold (28% primary /
   53% weekly remaining at the last check); do not repeat completed tests simply to spend credits.
   Resume the first owner-unblocked item, using the Owner checklist and Next agent task above. Do not guess
-  decisions or provision paid resources. Nothing is left uncommitted; publish this status-only branch via
-  PR with green CI before final integration. No hosted proof or production readiness is claimed.
+  decisions or provision paid resources. PR #31 published the status-only update with green CI and is on
+  main; no unfinished implementation remains. No hosted proof or production readiness is claimed.
