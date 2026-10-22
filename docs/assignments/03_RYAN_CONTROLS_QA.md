@@ -1,8 +1,9 @@
 # Ryan — Short owner checklist
 
 Updated 2026-10-22. Your previous coding, UI-fix, regression-test, Auth/MFA verification
-and detailed end-to-end QA tasks have moved to the contributor using
-[the combined assignment](RELEASE_INTEGRATION.md). You do not need to duplicate their tests.
+and detailed end-to-end QA tasks have moved to Ruthvik's
+[release-integration assignment](RELEASE_INTEGRATION.md). Harshith owns the separate
+[backend handover](HARSHITH_PLATFORM_HANDOVER.md). You do not need to duplicate their tests.
 
 ## Your remaining actions
 
@@ -14,8 +15,8 @@ and detailed end-to-end QA tasks have moved to the contributor using
   walkthrough: sign in, open an invoice, review/correct it, then sign out.
 - [ ] Accept the result or report what feels wrong; decide whether and when to release.
 
-The contributor owns implementation, test automation, failure/retry/security checks,
-deployment proofs, fixes and release documentation. Request independent review for
+Ruthvik and Harshith own implementation, tests, failure/retry/security checks,
+deployment proofs, fixes and release documentation within their assignments. Request independent review for
 security-sensitive changes rather than personally implementing or auditing them.
 
 Read root HANDOVER for mandatory rules and unresolved gates. Approval does not mean the app

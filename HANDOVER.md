@@ -226,6 +226,16 @@ every completed or WIP change. No uncommitted implementation may remain on the P
 
 ## Latest status
 
+**2026-10-22 correction of recipient mix-up:** Prior consolidation incorrectly merged two
+different recipients. Restored RELEASE_INTEGRATION exactly to `e8d38db` content for Ruthvik
+(same previously shared URL). Added HARSHITH_PLATFORM_HANDOVER as the separate combined
+NEXT_PERSON_HANDOVER + 02_FRIEND_PLATFORM brief for Harshith, with migration/consumer,
+runtime/dependency/deployment ownership and explicit implementation-versus-verification boundaries.
+Updated old pointers/team routing. Ruthvik retains AI transport/runtime wiring and detailed
+controls/UI/QA; Ryan's reduced owner checklist stays reduced. Earlier single-recipient status
+below is superseded. Documentation only on PR #38 branch; no runtime/hosted/Person 4 changes
+or fresh application test counts. Validate restoration/link checks before publishing.
+
 **2026-10-22 combined contributor clarification:** Owner confirmed NEXT_PERSON_HANDOVER and
 02_FRIEND_PLATFORM belong to the same contributor. RELEASE_INTEGRATION is the single combined
 brief, preserving delivered AI context/source paths and explicit schema/worker steps. Old files

@@ -2,12 +2,14 @@
 
 Prepared 2026-10-17. Scope: Persons 1–3, not three new implementations.
 
-**2026-10-22 assignment update:** [Release integration](assignments/RELEASE_INTEGRATION.md)
-is the single combined brief for the contributor handling NEXT_PERSON_HANDOVER and the platform
-assignment, including implementation and detailed controls/QA. Ryan's reduced
-[owner checklist](assignments/03_RYAN_CONTROLS_QA.md) covers approvals/access and one short final
-walkthrough. Check active PRs before coding. The role descriptions below are historical
-background, not current duplicate assignments.
+**2026-10-22 current assignments:**
+[Ruthvik — release integration](assignments/RELEASE_INTEGRATION.md) keeps his original brief,
+including AI runtime wiring, controls/UI and detailed QA.
+[Harshith — backend handover](assignments/HARSHITH_PLATFORM_HANDOVER.md) combines only
+NEXT_PERSON_HANDOVER and 02_FRIEND_PLATFORM, covering migrations/consumer and operations.
+[Ryan — short owner checklist](assignments/03_RYAN_CONTROLS_QA.md) remains reduced to
+approvals/access and final acceptance. Coordinate implementation versus verification; do not
+duplicate migration/worker/provider work. Earlier role descriptions below are historical.
 Reuse the existing code. The core platform/UI is implemented; live AI, durable AI state,
 service configuration and end-to-end release proofs remain unfinished.
 

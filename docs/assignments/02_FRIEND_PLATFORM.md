@@ -1,9 +1,10 @@
 # Platform assignment — consolidated
 
-The platform assignment and AI next-person handover belong to the same contributor.
+The platform assignment and AI next-person handover are assigned together to Harshith.
 
-**Use [the combined backend, AI handover and release assignment](RELEASE_INTEGRATION.md).**
+**Use [Harshith's backend and AI handover](HARSHITH_PLATFORM_HANDOVER.md).**
 
-It includes migration/worker integration, AI runtime wiring, deployment, controls/UI work,
-detailed QA and acceptance checks. This file is a pointer, not a second task list.
+It includes migration/worker implementation, restricted runtime setup, dependency proofs and
+deployment. Ruthvik keeps live AI transport/wiring, controls/UI and detailed release QA.
+This file is a pointer, not a second task list.
 Read root HANDOVER first; do not edit `person4_tally/` or bypass approval/security gates.

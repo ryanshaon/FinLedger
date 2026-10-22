@@ -1,11 +1,11 @@
 # AI next-person handover — consolidated
 
-The AI handover and platform assignment are now owned by the same contributor.
+The AI handover and platform assignment are assigned together to Harshith.
 
-**Use [the combined backend, AI handover and release assignment](assignments/RELEASE_INTEGRATION.md).**
+**Use [Harshith's backend and AI handover](assignments/HARSHITH_PLATFORM_HANDOVER.md).**
 
 That file incorporates delivered AI components, source paths, remaining migration/worker
-steps, approval gates and release/QA tasks. Do not follow two parallel task lists.
+steps, operational tasks and approval gates. Ruthvik's release/QA assignment stays separate.
 
 The original October 20 handover and implementation remain in Git history at
 [PR #37](https://github.com/ryanshaon/FinLedger/pull/37). The schema proposal remains at

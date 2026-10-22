@@ -1,4 +1,4 @@
-# FinLedger — Combined backend, AI handover and release assignment
+# FinLedger — Release integration assignment
 
 Prepared 2026-10-22. Repository: https://github.com/ryanshaon/FinLedger
 
@@ -8,15 +8,17 @@ Own the remaining P1–P3 integration, staging setup, controls/UI regression wor
 verification. Reuse existing implementations; deliver a reproducible synthetic invoice journey
 from upload to human review. Customer launch is a separate owner decision. Do not edit `person4_tally/`.
 
-This is the single combined brief for the contributor handling both `NEXT_PERSON_HANDOVER.md`
-and `02_FRIEND_PLATFORM.md`. It also assigns that contributor implementation, detailed
-controls/UI testing and QA previously listed under Ryan. The older files are pointers,
-not separate assignments. Check active PRs before coding and reuse completed work.
+This brief is the current assignment for its recipient, including controls/QA previously listed
+under Ryan. It does not cancel work already accepted by another contributor. Before coding,
+agree named owners and PR links for overlapping items in [NEXT_PERSON_HANDOVER](../NEXT_PERSON_HANDOVER.md).
+If that friend is building the migration/consumer, integrate and verify their PRs instead of
+creating competing versions. Take over an item only after explicit coordination.
 
 ## 2. Read first and establish the baseline
 
 Read [HANDOVER](../../HANDOVER.md) completely for mandatory safety rules and owner gates,
-then [the schema proposal](../proposals/AI_DURABLE_RETRIEVAL_USAGE_SCHEMA.md),
+then [the AI handover](../NEXT_PERSON_HANDOVER.md),
+[the schema proposal](../proposals/AI_DURABLE_RETRIEVAL_USAGE_SCHEMA.md),
 [the deployment runbook](../DEPLOYMENT_RUNBOOK.md),
 [Auth design](../plans/AUTH_SUPABASE_DESIGN.md) and
 [provider proposal](../decisions/ADR-001-AI_PROVIDER.md).
@@ -26,24 +28,6 @@ PR #37: the adapters exist, but live network transport and production integratio
 Latest inspected main before this brief: `cf5d2f0`, PR #37. Its October 20 CI reported
 **71 AI / 333 platform / 55 UI tests passed**, mock **3/3 structural + 6/6 exact**.
 These are recorded CI results, not a new local run or proof of hosted configuration.
-
-### Already delivered — reuse, do not rebuild
-
-PR #37 imported the AI contributor's schema proposal, synthetic fixtures/fail-closed regressions,
-credit-note fixture, stable extraction failure categories, Gemini adapter with fake transport,
-durable Python adapters tested on ephemeral PostgreSQL and an opt-in live-evaluation gate.
-Both mock and Gemini remain blocked in staging/production pending approved activation.
-No live provider or hosted durable migration was delivered by that work.
-
-| Boundary | Existing source |
-|---|---|
-| Extraction entry point/failures | `packages/extract/contract.py`, `packages/extract/failures.py` |
-| Statement/vision and bounded inputs | `packages/extract/vision_fallback.py`, `packages/extract/input_policy.py` |
-| Gemini adapter/transport interface | `packages/usage/providers/`, `packages/usage/model_router.py` |
-| Durable retrieval | `packages/rag/postgres_indexer.py` |
-| Reservations/usage | `packages/usage/postgres_kill_switch.py`, `packages/usage/postgres_usage_writer.py` |
-| Test-only SQL/durability tests | `packages/testing/sql/ai_durable_ephemeral.sql`, `packages/usage/tests/test_durable_postgres.py` |
-| Evaluation | `evals/run_evals.py` (`--live-synthetic-eval` stays opt-in) |
 
 Use Python 3.12, uv and PostgreSQL tools; Docker is needed for the Compose stack. From your clone:
 
@@ -75,22 +59,16 @@ Revalidate the dated model/lifecycle/pricing proposal before any approved activa
 
 ## 4. Integrate the platform handover
 
-Own the AI handover and platform tasks together. Check active PRs first; deliver one
-reviewed migration/consumer implementation, not parallel versions from the two older briefs.
+Coordinate these tasks with the contributor already assigned the AI handover. Own integration
+and evidence; do not duplicate their migration or worker.
 
 - [ ] Review/merge the next numbered platform migration for tenant-safe retrieval, usage and
   atomic reservations. Test against fresh and upgraded local databases. Test-only overlay SQL
   is not a deployment migration; inspect existing rows before adding uniqueness constraints.
-  Implement the reviewed `(client_id, ref)` RAG upsert key, usage/reservation tables,
-  tenant RLS and worker grants, plus reserve/reconcile/release token functions. Coordinate
-  the next available migration number after `011`; do not assume it remains unused.
 - [ ] Integrate `extract-worker` using existing claims/leases, tenant context, input loader and
   `extract_document(...)`; wire successful results into scoring/mapping and human review.
-  Use `load_extract_input`, `tenant(conn, client_id)` and stable `ExtractFailure` categories.
-  Keep invoice data out of `last_error`; Person 1's contract does not supply an actor identity.
 - [ ] Ensure statements become explicit exceptions without a model call; reject object keys
   outside the current tenant prefix before storage reads or AI invocation.
-  Preserve `statement_not_extracted` and `object_key_rejected` diagnostic handling.
 - [ ] Implement or integrate one non-login automation maker per firm: no Auth subject, bearer
   token or admin privilege. Validate human-editor/maker-checker separation with an independent reviewer.
 - [ ] Prove idempotent replay, compare-and-set status updates, bounded retries/dead letters,
@@ -138,8 +116,8 @@ pass/fail/skip counts, commit, environment, cleanup, unresolved blockers and rol
 
 ## 7. Work order and completion rules
 
-1. Baseline tests and active-PR check; start local transport/control regression work.
-2. Deliver the reviewed schema/consumer; wire adapters and maker behavior.
+1. Baseline tests and overlap agreement; start local transport/control regression work.
+2. Integrate the assigned friend's reviewed schema/consumer; wire adapters and maker behavior.
 3. Resolve owner gates, provision only approved resources, then verify staging dependencies/Auth.
 4. Complete invoice/failure E2E, fix regressions, request independent review and deliver release evidence.
 
