@@ -226,6 +226,16 @@ every completed or WIP change. No uncommitted implementation may remain on the P
 
 ## Latest status
 
+**2026-10-22 combined contributor clarification:** Owner confirmed NEXT_PERSON_HANDOVER and
+02_FRIEND_PLATFORM belong to the same contributor. RELEASE_INTEGRATION is the single combined
+brief, preserving delivered AI context/source paths and explicit schema/worker steps. Old files
+are pointers; the original handover remains in Git history/PR #37. Ryan's file now contains only
+approvals/access, one short final synthetic walkthrough and release acceptance; coding, UI fixes,
+test automation and detailed QA move to the combined contributor, with independent security review.
+TEAM_WORK_SPLIT marks earlier roles as historical. Documentation only on
+`docs/release-integration-assignment` (PR #38); no fresh application suite/counts, hosted changes,
+secrets or Person 4 edits. Historical PR #37 baseline: **71 AI / 333 platform / 55 UI**, mock **3/3 + 6/6**.
+
 **2026-10-22 consolidated release assignment:** Synced main to `cf5d2f0` (PR #37). Added
 `docs/assignments/RELEASE_INTEGRATION.md` for remaining AI runtime integration, platform integration,
 staging operations and controls/QA, including work previously assigned to Ryan. Existing friend's
