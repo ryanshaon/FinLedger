@@ -20,7 +20,8 @@ select r.rolname, exists (select from pg_roles p where p.rolname = r.rolname) as
 
 -- ---------- Part B: after applying 012 (read-only) ----------
 
-select name, applied_at from public.schema_migrations where name in ('012_ai_durable_state.sql', '013_llm_orphaned_holds.sql');
+select name, applied_at from public.schema_migrations
+ where name in ('012_ai_durable_state.sql', '013_llm_orphaned_holds.sql', '014_llm_unpriced_usage.sql') order by name;
 select relname, relrowsecurity as rls from pg_class
  where relname in ('llm_usage_rows', 'llm_token_reservations') and relnamespace = 'public'::regnamespace order by 1;
 select table_name, grantee, string_agg(privilege_type, ',' order by privilege_type) as privs
@@ -34,6 +35,8 @@ select f.sig, r.rolname from (values ('llm_reserve_tokens(uuid,uuid,uuid,int,int
   join pg_roles r on r.rolname in ('anon', 'authenticated', 'service_role', 'finledger_app',
                                    'finledger_worker_extract', 'finledger_worker_score', 'finledger_worker_map')
  where has_function_privilege(r.rolname, f.sig, 'execute') order by 1, 2;
+select is_nullable, column_default from information_schema.columns  -- 014: expect YES and NULL
+ where table_schema = 'public' and table_name = 'llm_usage_rows' and column_name = 'cost_usd';
 select (select count(*) from firms) as firms, (select count(*) from users where automation) as automation_makers,
        (select count(*) from rag_chunks where ref = '') as empty_refs_left;
 

@@ -191,7 +191,8 @@ def _seed_old_rows(dsn, refs):
 def test_upgrade_backfills_refs_and_maker_for_existing_firms(scratch_db):
     _apply_through_011(scratch_db)
     firm_id = _seed_old_rows(scratch_db, ["", "", "memory:1"])
-    assert migrate(scratch_db) == ["012_ai_durable_state.sql", "013_llm_orphaned_holds.sql"]
+    assert migrate(scratch_db) == ["012_ai_durable_state.sql", "013_llm_orphaned_holds.sql",
+                                  "014_llm_unpriced_usage.sql"]
     with psycopg.connect(scratch_db) as c:
         refs = sorted(r[0] for r in c.execute("select ref from rag_chunks"))
         assert refs[-1] == "memory:1" and all(r.startswith("legacy:") for r in refs[:2])

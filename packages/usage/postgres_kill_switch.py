@@ -65,7 +65,7 @@ class PostgresKillSwitch(KillSwitch):
         tokens_in: int,
         tokens_out: int,
         latency_ms: int,
-        cost_usd: float,
+        cost_usd: float | None,
     ) -> bool:
         """Insert the usage row and reconcile it on this hold. Both commit or both roll back."""
         if not self.enabled:

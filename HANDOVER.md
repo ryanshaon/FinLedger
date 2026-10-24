@@ -231,6 +231,17 @@ every completed or WIP change. No uncommitted implementation may remain on the P
 
 ## Latest status
 
+**2026-10-24 Harshith local completion (local):** Branch `claude/project-thread-rzrjfr` from main `4bbf722`.
+`extract-worker` now uses `PostgresKillSwitch` (injected into `ModelRouter`) and `PostgresUsageWriter` on the
+pooled connection; a refused hold ends as document `exception` / `ai_budget_exceeded`. New migration
+`014_llm_unpriced_usage.sql` makes `llm_usage_rows.cost_usd` nullable with no default, so an unpriced Gemini call
+stores its tokens with NULL cost and its hold is reconciled. New `finledger-platform score-worker` runs Person 3
+`ControlService.score` as the automation maker, in the same transaction as `finish_job`; login `fl_score` and a
+compose service are documented. Migrations 001–013 unchanged. Suites (PostgreSQL 16): AI **165** / platform
+**369** / UI **71**, mock **3/3 + 6/6**, 0 failed, 0 skipped. No hosted SQL, Auth, S3, email, or model call; Docker
+not installed, so the image job was not run locally. Known limit: with `FINLEDGER_LLM_KILL_SWITCH=false` the
+durable path has no real hold and settlement fails `unknown_reservation`; keep the switch on.
+
 **2026-10-22 Ruthvik post-Harshith (local):** Branch `feat/ruthvik-post-harshith`,
 [PR #7](https://github.com/jastiruthvik-web/FinLedger/pull/7). Behavior measured at
 `614d47d87475ea611722bdb247e345cb7c490556`. Expired-hold choice is option 3: keep migration

@@ -1,8 +1,8 @@
 """One transaction: usage insert, then llm_reconcile_tokens, for migration 012.
 
 The model call stays outside this transaction. Reconciling without the insert drops the hold
-out of the cap, because only `held` rows and usage tokens count. cost_usd cannot be NULL, so
-an unpriced call must not be written here as 0.
+out of the cap, because only `held` rows and usage tokens count. An unpriced call is written with
+cost_usd NULL (migration 014), never as 0.
 """
 
 from __future__ import annotations
@@ -21,10 +21,8 @@ def write_usage_and_reconcile(
     tokens_in: int,
     tokens_out: int,
     latency_ms: int,
-    cost_usd: float,
+    cost_usd: float | None,
 ) -> None:
-    if cost_usd is None:
-        raise ValueError("refusing to store an unpriced model call as cost_usd 0")
     from finledger_platform.db import tenant
 
     with tenant(conn, client_id):

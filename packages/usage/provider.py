@@ -34,15 +34,15 @@ def settle_provider_usage(
     """Settle one attempt.
 
     In-memory switches only reconcile. A durable switch inserts the usage row and reconciles
-    in one transaction when the cost was actually computed. An unpriced durable call is left
-    `held`: reconciling without a row would drop it from the cap, and cost_usd cannot store NULL.
+    in one transaction. An unpriced call is stored with cost_usd NULL (migration 014), never 0;
+    its tokens still count toward the cap.
     """
     settle = getattr(kill_switch, "settle_usage", None)
     if settle is None or not getattr(kill_switch, "enabled", True):
         kill_switch.reconcile(reservation, tokens_in + tokens_out)
         return False
-    if not cost_computed or cost_usd is None:
-        return False
+    if not cost_computed:
+        cost_usd = None
     return bool(
         settle(
             reservation,

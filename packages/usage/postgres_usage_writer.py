@@ -27,8 +27,6 @@ class PostgresUsageWriter(UsageWriter):
             client_id, doc_id, model, tokens_in, tokens_out, latency_ms, cost_usd, purpose,
             reservation_id=reservation_id,
         )
-        if cost_usd is None:
-            return row
         if not reservation_id:
             raise ValueError("reservation_id is required; a durable usage row must use the hold id")
         write_usage_and_reconcile(

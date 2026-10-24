@@ -5,6 +5,7 @@ Outcomes per job:
     statement                           -> document 'exception' (statement_not_extracted), no model call
     object key outside {client_id}/     -> document 'exception' (object_key_rejected), storage never read
     other ExtractFailure but transient  -> document 'exception' with the failure category
+    token cap spent (TokenCapExceeded)  -> document 'exception' (ai_budget_exceeded)
     provider_transient, store/DB errors -> job retries with backoff, then 'dead' (requeue_dead_job replays it)
     ok                                  -> document 'extracted' + workflow event by the firm's automation
                                            maker + score job carrying the CanonicalInvoice, in one transaction
@@ -20,8 +21,9 @@ import time
 from typing import Any, Callable
 
 import psycopg
-from extract.failures import FAILURE_CATEGORIES
+from extract.failures import AI_BUDGET_EXCEEDED, FAILURE_CATEGORIES
 from psycopg.types.json import Jsonb
+from usage.kill_switch import TokenCapExceededException
 
 from .db import tenant
 from .queue import claim, enqueue, finish
@@ -124,7 +126,8 @@ def process_extract(conn: psycopg.Connection, store, extract: ExtractFn, job: di
                           markdown=p["raw_markdown"], page_image_paths=p["page_image_paths"],
                           page_image_bytes=images)
     except Exception as e:
-        category = getattr(e, "category", None)
+        # The bill's token cap is spent: retrying cannot help, so it is a document exception, not a dead job.
+        category = AI_BUDGET_EXCEEDED if isinstance(e, TokenCapExceededException) else getattr(e, "category", None)
         if category not in FAILURE_CATEGORIES or category == PROVIDER_TRANSIENT:
             raise  # unknown categories retry under a fixed reason; only Person 1's fixed set reaches documents
         return _settle(conn, job, "exception", category, None)
@@ -154,21 +157,38 @@ def _run_once(conn: psycopg.Connection, store, extract: ExtractFn, lease_seconds
         return finish(conn, job["id"], job["claim_token"], ok=False, error=reason) or "lease_lost"
 
 
-def default_extract() -> ExtractFn:
-    """Person 1's dispatcher behind ModelRouter, which refuses mock or transport-less providers when hosted."""
+def default_extract(conn: psycopg.Connection | None = None) -> ExtractFn:
+    """Person 1's dispatcher behind ModelRouter, which refuses mock or transport-less providers when hosted.
+
+    With a connection, token holds and usage are durable: PostgresKillSwitch reserves and settles on the
+    hold's id, each step in its own short tenant() transaction, never one held across the model call.
+    The connection must not already be inside a transaction. Without one, usage stays in memory.
+    """
     from extract.contract import extract_document
     from extract.extract_worker import ExtractWorker
     from extract.vision_fallback import ExtractionDispatcher
     from usage.usage_writer import UsageWriter
 
-    dispatcher = ExtractionDispatcher(ExtractWorker(UsageWriter()))
+    if conn is None:
+        worker = ExtractWorker(UsageWriter())
+    else:
+        from usage.model_router import ModelRouter, Settings
+        from usage.postgres_kill_switch import PostgresKillSwitch
+        from usage.postgres_usage_writer import PostgresUsageWriter
+
+        settings = Settings.from_env()
+        switch = PostgresKillSwitch(conn, limit=settings.per_bill_token_cap, enabled=settings.kill_switch_enabled)
+        worker = ExtractWorker(PostgresUsageWriter(conn), ModelRouter(settings, kill_switch=switch))
+    dispatcher = ExtractionDispatcher(worker)
     return lambda **kw: extract_document(dispatcher, **kw)
 
 
-def run_forever(pool, store, extract: ExtractFn, idle_sleep: float = 1.0) -> None:
+def run_forever(pool, store, make_extract: Callable[[psycopg.Connection], ExtractFn],
+                idle_sleep: float = 1.0) -> None:
+    """make_extract binds the durable adapters to each pooled connection; a refused provider fails the first loop."""
     log.info("extract worker started")
     while True:
         with pool.connection() as conn:
-            did = run_once(conn, store, extract)
+            did = run_once(conn, store, make_extract(conn))
         if did is None:
             time.sleep(idle_sleep)

@@ -1,10 +1,11 @@
 # Harshith — Remaining staging and deployment work
 
-Updated 2026-10-22 after [PR #41](https://github.com/ryanshaon/FinLedger/pull/41) (`1c7d8a0`) and
-[PR #45](https://github.com/ryanshaon/FinLedger/pull/45) (`00ffd0a`) merged into main. This is your only active assignment file.
+Updated 2026-10-24 after [PR #41](https://github.com/ryanshaon/FinLedger/pull/41), [#45](https://github.com/ryanshaon/FinLedger/pull/45),
+[#47](https://github.com/ryanshaon/FinLedger/pull/47) and Ruthvik's post-Harshith changes merged into main (`4bbf722`).
+This is your only active assignment file.
 
-**Status: not complete.** Local backend and rollout preparation are done. All hosted tasks in §2 are open,
-and the local items in §2a can be done now without credentials.
+**Status: local work complete; hosted work not started.** Every §2a item is done locally. All hosted tasks in §2
+are open and wait on Ryan's approvals.
 
 ## 1. Completed — do not rebuild
 
@@ -25,8 +26,13 @@ These are CI results for the reviewed PR, not a new local run.
   exact missing inputs and the Ruthvik integration contract below. Validated on local PostgreSQL 16 with
   a superuser owner only; no hosted state read or changed. CI green on `f7e8ca4`.
 
+- PR #47: migration `013_llm_orphaned_holds.sql` (expired holds) and the extract-worker sweep call.
+- Local completion PR (this update): durable `PostgresKillSwitch`/`PostgresUsageWriter` in `extract-worker`,
+  migration `014_llm_unpriced_usage.sql`, the `score-worker` entry point, runbook/compose/staging-check updates.
+  Local run on PostgreSQL 16: **165 AI / 369 platform / 71 UI passed**, mock **3/3 + 6/6**, 0 failed, 0 skipped.
+
 **Local backend milestone and rollout preparation completed. Hosted operations are not completed.**
-Migration 012 is committed but documented as **not applied hosted**; verify actual history before any action.
+Migrations 012–014 are committed but documented as **not applied hosted**; verify actual history before any action.
 
 ## 2. Remaining work, in order
 
@@ -73,7 +79,7 @@ No hosted state was read or changed. Exact missing inputs:
   server version as the first step of Part A and add a fallback or a clear stop for older versions.
   *Done locally:* passed 11/11 with a `LOGIN CREATEROLE` non-superuser owner on PostgreSQL 16.15; Part A now
   records the version, and Part C stops before writing on servers older than 16. Not yet run on Supabase.
-- [ ] **Recover stuck token holds.** *(implemented, awaiting Ruthvik's agreement before merge)* A worker that dies between `llm_reserve_tokens` and settlement leaves a
+- [x] **Recover stuck token holds.** *(merged in PR #47; Ruthvik accepted the `expired` rule, option 3)* A worker that dies between `llm_reserve_tokens` and settlement leaves a
   `held` row with no expiry, which blocks that bill's cap forever. Agree the approach with Ruthvik, then implement
   it as a new reviewed migration (013) or worker sweep, never by editing 012. Tests: expired hold released,
   live hold kept, cross-tenant sweep denied, replay safe.
@@ -81,18 +87,23 @@ No hosted state was read or changed. Exact missing inputs:
   not counted toward the cap) and `llm_expire_orphaned_tokens(client_id, document_id, job_id, claim_token)`.
   It needs the caller's live lease and expires only holds created before that claim, and does nothing while
   another job for the bill holds a live lease. `extract-worker` calls it before the model call. Four tests cover
-  those cases plus the worker path. Ruthvik to confirm `expired` (rather than counting the hold) fits his
-  accounting rules.
-- [ ] **Wire durable adapters into the worker.** Once Ruthvik's adapter/router injection change lands, connect
-  `PostgresKillSwitch` and `PostgresUsageWriter` in `default_extract()` with the worker pool, using short
-  `tenant()` transactions (see contract below). Until then mark this **blocked on Ruthvik PR <link>**.
-  *Status 2026-10-22:* **blocked on Ruthvik**, no adapter/router injection PR yet.
-- [ ] **Score consumer entry point.** There is still no `score` consumer, so extracted documents wait in the
-  queue. Agree with Ruthvik who adds the `finledger-platform` entry point; if it is you, follow the
-  extract-worker pattern (lease, idempotent replay, safe failure categories) and leave review logic to Ruthvik.
-  *Status 2026-10-22:* **awaiting agreement with Ruthvik** on ownership; not started, to avoid a competing consumer.
-  Note that real extractions currently fail Person 3 `validate_invoice` (contract below), so a consumer would
-  only produce exceptions until that is aligned.
+  those cases plus the worker path. Ruthvik confirmed `expired` (not counted toward the cap) fits his accounting rules.
+- [x] **Wire durable adapters into the worker.** *Done 2026-10-24:* `default_extract(conn)` builds a
+  `PostgresKillSwitch` (per-bill cap and switch from `Settings`) injected into `ModelRouter`, and a
+  `PostgresUsageWriter`, both on the worker's pooled connection with short `tenant()` transactions; usage settles
+  on the hold's real reservation id. A refused hold (`ai_budget_exceeded`) moves the document to `exception`
+  with reason `ai_budget_exceeded` and no score job. New migration `014_llm_unpriced_usage.sql` makes
+  `llm_usage_rows.cost_usd` nullable with no default, so an unpriced call is stored with its tokens and NULL
+  cost and its hold is reconciled instead of staying `held`. 012/013 are unchanged.
+  *Known limit:* with `FINLEDGER_LLM_KILL_SWITCH=false` the router gets no real hold, so durable settlement
+  would fail with `unknown_reservation`; keep the switch enabled wherever the durable path runs.
+- [x] **Score consumer entry point.** *Done 2026-10-24 (Harshith took ownership after Ruthvik finished):*
+  `finledger-platform score-worker` claims `score` jobs, locks the document, resolves the maker with
+  `automation_maker_id()` (payload `maker_id` is ignored), and calls Person 3 `ControlService.score` in a savepoint
+  in the same transaction as `finish_job`. Replays are skipped; a payload for another document becomes
+  `score_payload_rejected`; an invoice Person 3 rejects becomes `canonical_invoice_rejected` with nothing
+  half-written; other errors retry with fixed reasons; a lost lease rolls the score back. Review logic stays in
+  Person 3. Login `fl_score` (roles `finledger_app`, `finledger_worker_score`) is in the runbook.
 - [x] **Scanner and deployment config review.** Not covered by PR #45: review `clamd` settings, worker health
   checks and the staging process layout so they are ready as soon as hosting is approved. Record findings
   in the runbook; no hosted changes. *Done:* runbook §2 records clamd `StreamMaxLength` ≥ 40M, the 25 MiB
@@ -109,6 +120,8 @@ approved live-provider/runtime path is ready. Do not weaken startup guards to ma
 
 [Ruthvik's work](RUTHVIK_WORK.md) covers provider/accounting fixes, actual HTTP/runtime wiring,
 durable-adapter integration, score/map → review completion and detailed Auth/UI/end-to-end QA.
+*2026-10-24:* his adapter/router injection, schema alignment and maker/editor fixes are on main; the worker
+wiring and score consumer above are done. What remains with him is the hosted Auth/UI/end-to-end QA.
 
 - Give him migration/function signatures, the extract result/score payload contract
   (`canonical_invoice`, `maker_id`), reviewed commit links and operational dependency results.
@@ -123,7 +136,8 @@ durable-adapter integration, score/map → review completion and detailed Auth/U
 - Supply the approved staging URL and private synthetic test setup. Ruthvik leads real Auth,
   browser/workflow and upload-to-review proofs; you fix backend/operational failures they expose.
 
-**Integration contract for Ruthvik (main `4fc1fe2`; read from code, not a hosted result):**
+**Integration contract for Ruthvik (written at main `4fc1fe2`; the three open points below were resolved by
+main `4bbf722` and this update, kept for the record):**
 
 - **Functions (migration 012).** All `security definer`, callable only by a login whose `session_user` is in
   `finledger_worker_extract`/`score`/`map`, and only inside `tenant()` for the same client:

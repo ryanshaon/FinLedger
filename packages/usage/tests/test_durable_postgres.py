@@ -199,29 +199,31 @@ def test_kill_switch_disabled_skips_reserve(ai_owner_dsn, ai_app_dsn):
             assert held == 0
 
 
-def test_writer_requires_the_hold_id_and_skips_unpriced(ai_owner_dsn, ai_app_dsn):
+def test_writer_requires_the_hold_id_and_stores_unpriced_as_null(ai_owner_dsn, ai_app_dsn):
     _, client_id, doc_id = _seed_client(ai_owner_dsn)
     with psycopg.connect(ai_app_dsn, row_factory=dict_row) as conn:
         switch = PostgresKillSwitch(conn, limit=1000)
         reservation = switch.reserve(client_id, doc_id, 10)
+        priced = switch.reserve(client_id, doc_id, 10)
         writer = PostgresUsageWriter(conn)
         with pytest.raises(ValueError, match="reservation_id"):
             writer.log_usage(client_id, doc_id, "mock", 1, 1, 1, 0.0, "extract")
         writer.log_usage(
             client_id, doc_id, "mock", 1, 1, 1, None, "extract", reservation_id=reservation.reservation_id,
         )
-    assert _bill_rows(ai_app_dsn, client_id) == []
-    assert _holds(ai_app_dsn, client_id) == [{"reservation_id": reservation.reservation_id, "state": "held"}]
     with psycopg.connect(ai_app_dsn, row_factory=dict_row) as conn:
         PostgresUsageWriter(conn).log_usage(
-            client_id, doc_id, "mock", 4, 6, 1, 0.0, "extract", reservation_id=reservation.reservation_id,
+            client_id, doc_id, "mock", 4, 6, 1, 0.0, "extract", reservation_id=priced.reservation_id,
         )
     rows = _bill_rows(ai_app_dsn, client_id)
-    assert len(rows) == 1
-    assert rows[0]["reservation_id"] == reservation.reservation_id
-    assert rows[0]["state"] == "reconciled"
-    assert rows[0]["tokens_in"] == 4 and rows[0]["tokens_out"] == 6
-    assert rows[0]["cost_usd"] == 0
+    assert [r["reservation_id"] for r in rows] == [reservation.reservation_id, priced.reservation_id]
+    assert all(r["state"] == "reconciled" for r in rows)
+    assert rows[0]["cost_usd"] is None  # unknown, never 0 (migration 014)
+    assert rows[1]["tokens_in"] == 4 and rows[1]["tokens_out"] == 6 and rows[1]["cost_usd"] == 0
+    assert _holds(ai_app_dsn, client_id) == [
+        {"reservation_id": reservation.reservation_id, "state": "reconciled"},
+        {"reservation_id": priced.reservation_id, "state": "reconciled"},
+    ]
 
 
 def test_priced_thoughts_settle_on_the_hold_for_a_second_connection(ai_owner_dsn, ai_app_dsn):
@@ -268,17 +270,18 @@ def test_unknown_usage_reconciles_at_the_reservation_not_zero(ai_owner_dsn, ai_a
     assert float(rows[0]["cost_usd"]) > 0
 
 
-def test_unpriced_gemini_does_not_insert_cost_zero(ai_owner_dsn, ai_app_dsn):
+def test_unpriced_gemini_stores_null_cost_and_keeps_its_tokens(ai_owner_dsn, ai_app_dsn):
     _, client_id, doc_id = _seed_client(ai_owner_dsn)
     transport = FakeGeminiTransport([TransportResponse("{}", 3, 4, 1)])
     with psycopg.connect(ai_app_dsn, row_factory=dict_row) as conn:
         response = _durable_gemini(conn, transport, priced=False).complete(
             "extract", "gemini-1.5-flash", client_id, doc_id, {"markdown": "x"},
         )
-    assert response.cost_computed is False and response.usage_persisted is False
-    assert _bill_rows(ai_app_dsn, client_id) == []
-    holds = _holds(ai_app_dsn, client_id)
-    assert holds == [{"reservation_id": response.reservation_id, "state": "held"}]
+    assert response.cost_computed is False and response.usage_persisted is True
+    rows = _bill_rows(ai_app_dsn, client_id)
+    assert len(rows) == 1 and rows[0]["reservation_id"] == response.reservation_id
+    assert rows[0]["cost_usd"] is None and rows[0]["state"] == "reconciled"
+    assert rows[0]["tokens_in"] == 3 and rows[0]["tokens_out"] == 4  # still counted toward the cap
 
 
 def test_extract_worker_does_not_insert_a_second_usage_row(ai_owner_dsn, ai_app_dsn):
@@ -381,15 +384,12 @@ def test_model_router_accepts_postgres_switch_and_refuses_hosted(ai_owner_dsn, a
             )
 
 
-def test_default_extract_keeps_in_memory_adapters():
+def test_default_extract_is_durable_only_with_a_connection():
     import inspect
 
-    from extract.extract_worker import ExtractWorker
     from finledger_platform.extract_worker import default_extract
 
     source = inspect.getsource(default_extract)
-    assert "UsageWriter()" in source
-    assert "ExtractWorker(UsageWriter())" in source
-    assert "PostgresKillSwitch" not in source
-    assert "PostgresUsageWriter" not in source
-    assert "ModelRouter()" in inspect.getsource(ExtractWorker.__init__)
+    assert "ExtractWorker(UsageWriter())" in source  # no connection: in-memory, for local tools and tests
+    assert "PostgresKillSwitch(conn" in source and "PostgresUsageWriter(conn)" in source
+    assert "kill_switch=switch" in source

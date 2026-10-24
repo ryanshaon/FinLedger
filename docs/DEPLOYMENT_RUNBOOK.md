@@ -33,11 +33,15 @@ One image supplies separate processes. Do not run a worker inside a web process.
 | Ingest worker | `finledger-platform worker` | Scanner availability, queue progress, retries and dead jobs |
 | Email worker | `finledger-platform outbox-worker --client-id <client-uuid>` | One approved client per process; delivery and failed outbox rows |
 | Extract worker | `finledger-platform extract-worker` | Extract retries/dead jobs, document exceptions, `score` queue depth |
+| Score worker | `finledger-platform score-worker` | Score retries/dead jobs, `canonical_invoice_rejected` exceptions, `score` queue age |
 
 The extract worker needs migration 012 and an approved provider. On `main` at `4fc1fe2`, `ModelRouter`
 refuses both `mock` and `gemini` when `FINLEDGER_ENV` is staging/production, so `extract-worker` exits at
-startup there; do not deploy it until the approved live-provider path lands. There is no `score` consumer
-yet, so extracted documents wait in the `score` queue.
+startup there; do not deploy it until the approved live-provider path lands. With a pooled connection it
+reserves and settles tokens durably (`PostgresKillSwitch`/`PostgresUsageWriter`, one short transaction per step);
+a bill whose cap is spent becomes a document exception (`ai_budget_exceeded`), not a dead job.
+The score worker runs Person 3's `ControlService.score` as the firm's automation maker and moves
+`extracted → scored`; an invoice Person 3 rejects becomes a document exception, never a retry loop.
 
 Runtime database logins (one per process; names are examples, passwords are owner-chosen secrets).
 Each login is `LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEROLE NOCREATEDB INHERIT`, owns no tables, and connects
@@ -48,7 +52,8 @@ through the session pooler. Queue functions check `session_user`, so grant roles
 | Intake API | `fl_api` | `finledger_app` | Add `finledger_queue_ops` only if firm admins should use the dead-job requeue route |
 | Control UI | `fl_control` | `finledger_app` | |
 | Ingest worker | `fl_ingest` | `finledger_app`, `finledger_worker_ingest` | |
-| Extract worker | `fl_extract` | `finledger_app`, `finledger_worker_extract` | Only after migration 012 and an approved provider |
+| Extract worker | `fl_extract` | `finledger_app`, `finledger_worker_extract` | Only after migrations 012–014 and an approved provider |
+| Score worker | `fl_score` | `finledger_app`, `finledger_worker_score` | Needs 012 (`automation_maker_id`) |
 | Email worker | `fl_outbox` | `finledger_app` | Row locks, no queue claim |
 | Migrations | owner | | One-off restricted environment only |
 
@@ -171,19 +176,22 @@ plus one rollback-only proof; psql or the SQL editor, as owner).
    `3cf8d16f9c0be2d6e116a3395b19c80cfd18cc8a` (`git rev-parse <commit>:person2_platform/src/finledger_platform/migrations/012_ai_durable_state.sql`).
    Deploy only images built from a commit with the same blob. Migration `013_llm_orphaned_holds.sql`
    (blob `6a0fdf8d5e0ce39a76000f87404bbace72763800`, adds the `expired` hold state and `llm_expire_orphaned_tokens`) ships with 012 in
-   any image built after it merged; review and approve both together.
+   any image built after it merged, and so does `014_llm_unpriced_usage.sql` (blob
+   `29f811e3d31e6278e5905bfa2bab831eb704b807`, makes `llm_usage_rows.cost_usd` nullable: NULL means an unpriced
+   call, never free). Review and approve the three together.
 2. **Part A, before.** Expect `applied` to list exactly `001`–`011`, no 012 tables or `users.automation`,
    `dup_groups = 0`, `maker_email_clashes = 0` and all five roles present. Any difference: stop. Duplicates
    abort 012 by design; resolving them is a separate approved data task.
 3. **Apply once** with `finledger-platform migrate` (owner DSN). It runs each pending file in one transaction
    with its `public.schema_migrations` row, so it must report exactly the approved pending files, in order:
-   `applied: ['012_ai_durable_state.sql', '013_llm_orphaned_holds.sql']` from a commit that includes 013.
+   `applied: ['012_ai_durable_state.sql', '013_llm_orphaned_holds.sql', '014_llm_unpriced_usage.sql']`.
    Anything else: stop. Do not use Supabase `apply_migration` for these files: it would not write
    `public.schema_migrations`, and a later `migrate` would replay them and fail. Supabase's own history will not list 012; record that, do not hand-edit it.
 4. **Part B, after.** Expect RLS on both tables; table grants only `finledger_app` SELECT on usage, worker
    roles INSERT on usage and SELECT on reservations; EXECUTE on all five functions (four from 012,
    `llm_expire_orphaned_tokens` from 013) only for the three worker roles
-   (not `anon`, `authenticated`, `service_role` or `finledger_app`); one automation maker per firm; no empty refs.
+   (not `anon`, `authenticated`, `service_role` or `finledger_app`); `cost_usd` nullable with no default;
+   one automation maker per firm; no empty refs.
 5. **Part C, proof.** Expect 11 `passed = t` rows and `nothing_persisted = t`.
 6. **Recovery.** A failed apply rolls back entirely. After a successful apply there is no down migration:
    pre-012 images ignore the new objects, and `create-firm` still works because the trigger adds the maker.

@@ -4,6 +4,7 @@
 #   finledger-platform serve --host 0.0.0.0 --port 8000
 #   finledger-platform worker
 #   finledger-platform extract-worker     (needs migration 012 and an approved provider)
+#   finledger-platform score-worker
 #   finledger-platform outbox-worker --client-id <uuid>
 #   finledger-control --host 0.0.0.0 --port 8770
 #   finledger-platform migrate            (one-off, owner DSN only)

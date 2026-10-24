@@ -4,6 +4,10 @@
 Behavior commit `614d47d87475ea611722bdb247e345cb7c490556`. Local suites on that commit: AI **165**,
 platform **360**, UI **69**, mock **3/3 + 6/6**, 0 failed, 0 skipped. No hosted SQL was applied.
 
+**Status 2026-10-24:** the tasks below are done on the local completion branch (durable wiring in
+`default_extract(conn)`, migration `014_llm_unpriced_usage.sql` for unpriced calls, `score-worker`). See
+[HARSHITH_WORK.md §2a](assignments/HARSHITH_WORK.md).
+
 ## What this branch changed
 
 **Expired holds.** Option 3: accept the rule already in migration `013`. Expired rows stay for audit and do not count toward the cap. With `max_attempts = 5`, five dead attempts that had already reached the provider can leave the cap (about 5× that bill). That is accepted. A timeout with no body can stay uncounted. Do not edit `012` or `013` for this, and do not add `014` for it. The existing expiry tests stay the regression.

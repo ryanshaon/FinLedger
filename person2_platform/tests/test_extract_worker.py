@@ -196,6 +196,31 @@ def test_person1_mock_dispatcher_end_to_end(world, client, conn, store, settings
     assert score["payload"]["canonical_invoice"]["document_id"] == doc_id
 
 
+def test_durable_default_extract_settles_usage_on_its_hold(world, client, conn, store, settings, owner, monkeypatch):
+    monkeypatch.setenv("FINLEDGER_LLM_PROVIDER", "mock")
+    monkeypatch.delenv("FINLEDGER_ENV", raising=False)
+    doc_id = ingested(world, client, conn, store, settings)
+    assert run_once(conn, store, extract_worker.default_extract(conn)) == "extracted"
+    rows = owner.execute("""select u.reservation_id, u.purpose, u.tokens_in + u.tokens_out as tokens, r.state
+                              from llm_usage_rows u join llm_token_reservations r using (reservation_id)
+                             where u.document_id = %s""", (doc_id,)).fetchall()
+    assert len(rows) == 1 and rows[0][1] == "extract" and rows[0][2] > 0 and rows[0][3] == "reconciled"
+    assert owner.execute("select count(*) from llm_token_reservations where document_id = %s and state = 'held'",
+                         (doc_id,)).fetchone()[0] == 0
+
+
+def test_durable_cap_refusal_leaves_the_document_unextracted(world, client, conn, store, settings, owner, monkeypatch):
+    monkeypatch.setenv("FINLEDGER_LLM_PROVIDER", "mock")
+    monkeypatch.setenv("FINLEDGER_PER_BILL_TOKEN_CAP", "1")
+    monkeypatch.delenv("FINLEDGER_ENV", raising=False)
+    doc_id = ingested(world, client, conn, store, settings)
+    assert run_once(conn, store, extract_worker.default_extract(conn)) == "exception"
+    assert doc_row(conn, world, doc_id) == {"status": "exception", "status_reason": "ai_budget_exceeded"}
+    assert jobs(conn, world.a["id"], "score") == []
+    assert owner.execute("select count(*) from llm_token_reservations where document_id = %s",
+                         (doc_id,)).fetchone()[0] == 0
+
+
 def test_hosted_environment_refuses_mock_provider(monkeypatch):
     monkeypatch.setenv("FINLEDGER_LLM_PROVIDER", "mock")
     monkeypatch.setenv("FINLEDGER_ENV", "staging")
