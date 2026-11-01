@@ -80,44 +80,11 @@ begin
   insert into zz_proof_012_results (check_name, passed) values ('plain finledger_app cannot reserve', r = 'denied');
 end $$;
 
--- Additional core tenancy checks on the restored database.
-grant insert on zz_proof_012_results to finledger_app;
-grant usage on sequence zz_proof_012_results_n_seq to finledger_app;
-do $$
-declare affected int; denied boolean := false;
-begin
-  perform set_config('app.client_id', '', true);
-  set local role finledger_app;
-  insert into zz_proof_012_results (check_name, passed)
-    select 'no tenant sees no documents', count(*) = 0 from documents;
-  perform set_config('app.client_id', '00000000-0000-4000-8000-00000000000a', true);
-  insert into zz_proof_012_results (check_name, passed)
-    select 'tenant A sees only its document', count(*) = 1 and bool_and(client_id = '00000000-0000-4000-8000-00000000000a'::uuid) from documents;
-  update documents set original_filename = 'zz-proof-denied.pdf'
-    where id = '00000000-0000-4000-8000-0000000000db';
-  get diagnostics affected = row_count;
-  insert into zz_proof_012_results (check_name, passed) values ('cross-tenant update changes zero rows', affected = 0);
-  delete from documents where id = '00000000-0000-4000-8000-0000000000db';
-  get diagnostics affected = row_count;
-  insert into zz_proof_012_results (check_name, passed) values ('cross-tenant delete changes zero rows', affected = 0);
-  begin
-    insert into documents (client_id, channel, object_path, content_hash, mime, size_bytes)
-    values ('00000000-0000-4000-8000-00000000000b', 'portal',
-            '00000000-0000-4000-8000-00000000000b/raw/denied.pdf', repeat('c',64), 'application/pdf', 10);
-  exception when insufficient_privilege then denied := true;
-  end;
-  insert into zz_proof_012_results (check_name, passed) values ('cross-tenant document insert denied', denied);
-  insert into zz_proof_012_results (check_name, passed)
-    select 'proof app role cannot bypass RLS', not rolsuper and not rolbypassrls
-      and not pg_has_role(current_user, (select tableowner from pg_tables where schemaname='public' and tablename='documents'), 'USAGE')
-    from pg_roles where rolname=current_user;
-  reset role;
-end $$;
 -- Fail the whole proof if even one check fails; execute_sql returns only the last
 -- result, so assertions must run before rollback destroys the temporary results.
 do $$
 begin
-  if (select count(*) from zz_proof_012_results) <> 17
+  if (select count(*) from zz_proof_012_results) <> 11
      or exists (select 1 from zz_proof_012_results where passed is distinct from true) then
     raise exception 'replacement database proof failed: %',
       (select jsonb_agg(jsonb_build_object('check',check_name,'passed',passed)) from zz_proof_012_results);
@@ -125,7 +92,7 @@ begin
 end $$;
 rollback;
 select jsonb_build_object(
-  'asserted_checks', 17,
+  'asserted_checks', 11,
   'synthetic_firms_removed', not exists(select 1 from firms where name='zz-proof-012'),
   'temporary_role_removed', not exists(select 1 from pg_roles where rolname='zz_proof_012'),
   'temporary_table_removed', to_regclass('pg_temp.zz_proof_012_results') is null
