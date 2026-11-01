@@ -81,7 +81,9 @@ begin
 end $$;
 
 -- Additional core tenancy checks on the restored database.
-do $
+grant insert on zz_proof_012_results to finledger_app;
+grant usage on sequence zz_proof_012_results_n_seq to finledger_app;
+do $$
 declare affected int; denied boolean := false;
 begin
   perform set_config('app.client_id', '', true);
@@ -110,17 +112,17 @@ begin
       and not pg_has_role(current_user, (select tableowner from pg_tables where schemaname='public' and tablename='documents'), 'USAGE')
     from pg_roles where rolname=current_user;
   reset role;
-end $;
+end $$;
 -- Fail the whole proof if even one check fails; execute_sql returns only the last
 -- result, so assertions must run before rollback destroys the temporary results.
-do $
+do $$
 begin
   if (select count(*) from zz_proof_012_results) <> 17
      or exists (select 1 from zz_proof_012_results where passed is distinct from true) then
     raise exception 'replacement database proof failed: %',
       (select jsonb_agg(jsonb_build_object('check',check_name,'passed',passed)) from zz_proof_012_results);
   end if;
-end $;
+end $$;
 rollback;
 select jsonb_build_object(
   'asserted_checks', 17,
