@@ -89,7 +89,21 @@ Person 3 **55 passed**; `test` + `image` CI green on `731f9e9`. Re-run exact cou
 - If you change `person2_platform/pyproject.toml` dependencies, run `uv lock` in **both** `person2_platform` and
   `person3_control_ui` (Person 3 depends on Person 2), then `uv lock --check` both.
 
-## Supabase staging (project `hxymklwqifwojziewtcv`, region `ap-south-1`, no customer data)
+## Supabase staging (current project `smnfnnwmasnsuuwrboge`, `ap-south-1`, no customer data)
+
+**Current as of 2026-11-02:** owner replaced the paused project with **StartUps / FinLedger**.
+Connected account label = **Startups**; tool calls must explicitly select that account's `link_id`,
+not Primary. New API URL: `https://smnfnnwmasnsuuwrboge.supabase.co`.
+The October 15 backup's empty app baseline and private 25 MiB bucket were restored, then
+committed migrations 012-015 applied. **001-015 are now recorded in `public.schema_migrations`;
+do not replay them.** Supabase's history records two recovery batches. All 30 application tables
+have RLS enabled; API roles have no direct application table/function grants; rollback-only AI/tenant
+proof **11/11** passed and cleanup was confirmed. Security advisor: only the three expected INFOs.
+Document UPDATE/DELETE isolation remains unverified here (connector confirmation expired).
+No runtime login/password, S3/Auth keys, hosted Auth settings or `.env` connection was migrated.
+See [recovery evidence and exact batches](docs/SUPABASE_RECOVERY.md) before any further hosted work.
+
+### Historical old project (`hxymklwqifwojziewtcv`): not the current destination
 
 State verified 2026-10-09:
 - Both Supabase's migration history and `public.schema_migrations` include `001`–`011`. Migrations 009, 010 and
@@ -143,7 +157,7 @@ Tick these off in order. An agent can help explain each step but must never see 
 3. **Windows `.env` for S3:** copy `.env.example` only if `.env` does not exist, then open `.env` yourself;
    never overwrite existing credentials with the example. Set `FINLEDGER_STORE=s3`,
    `FINLEDGER_S3_BUCKET=finledger-documents-dev`,
-   `FINLEDGER_S3_ENDPOINT_URL=https://hxymklwqifwojziewtcv.supabase.co/storage/v1/s3`,
+   `FINLEDGER_S3_ENDPOINT_URL=https://smnfnnwmasnsuuwrboge.supabase.co/storage/v1/s3`,
    `FINLEDGER_S3_REGION=ap-south-1`, `FINLEDGER_S3_ADDRESSING_STYLE=path`, and **type** `AWS_ACCESS_KEY_ID` /
    `AWS_SECRET_ACCESS_KEY` yourself. `.env` is gitignored; never paste the keys into chat. Then run
    `finledger-platform s3-smoke` (open item 1).
@@ -230,6 +244,33 @@ every completed or WIP change. No uncommitted implementation may remain on the P
 ---
 
 ## Latest status
+
+**2026-11-02 replacement Supabase restored:** Branch `restore/new-supabase-finledger`, PR #53.
+Owner supplied the October 15 private gzip backup and authorized the new StartUps project
+`smnfnnwmasnsuuwrboge` in Mumbai. After reconnection, selecting account **Startups** explicitly
+resolved the connector's missing-link error. Destination was empty. No raw backup, role password,
+JWT/API key or secret value was printed or committed; no Person 4 files were edited.
+Committed recovery SQL under `migrations/recovery/` before executing it; these operator-only files
+are excluded from the non-recursive app migrator. Independent read-only SQL review found no
+actionable issue. On reviewed `f179caa`, CI test/image passed: **254 AI / 378 platform / 101 UI**,
+mock **3/3 + 6/6**; no local application suites rerun.
+
+Hosted changes: batch `20261101231007 restore_backup_20261015_baseline` recreated the exact
+001-011 application baseline and private empty bucket; table/column inventories, row counts,
+23 policy names and six aggregate baseline checks all matched the backup. Batch
+`20261101231038 upgrade_recovered_finledger_through_015` applied existing 012-015. App tracker
+has all 15 filenames, 30 application tables all have RLS, and API table/function grants are zero.
+Security advisors show only expected INFO notices on schema history and two private session tables.
+The 17-check document-write proof hit an expired connector confirmation before execution; it is
+not claimed as passed. The reduced committed proof at `ae0df45` passed **11/11** AI/tenant assertions;
+synthetic firm, temporary role and result table cleanup were confirmed. See recovery evidence.
+
+No replacement runtime credentials, `.env`, Auth settings, email, scanner, provider, deployed
+service or paid resource was changed. Current task (database restore) is complete; connecting
+the app still needs privately configured restricted runtime logins, new S3/Auth credentials and
+the existing hosted proofs. Do not use postgres/service-role as an app connection. Old-project
+pause/resume quota issue is not resolved by this restore. Finish with exact-head green PR CI
+and push this status; no uncommitted work may remain.
 
 **2026-10-24 Harshith local completion (local):** Branch `claude/project-thread-rzrjfr` from main `4bbf722`.
 `extract-worker` now uses `PostgresKillSwitch` (injected into `ModelRouter`) and `PostgresUsageWriter` on the

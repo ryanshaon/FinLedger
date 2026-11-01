@@ -167,10 +167,16 @@ finledger-platform s3-smoke
   Cleanup failure includes only the generated synthetic object key for explicit operator recovery.
   Interrupted processes or missing output still require independent cleanup verification. With no custom
   endpoint configured, the public-object check is skipped; successful S3 roundtrip alone does not prove privacy.
-- Migrations 001–011 are already applied to the current Supabase staging project. Do not reapply or edit
+- Migrations 001–015 are already applied to the replacement Supabase staging project
+  `smnfnnwmasnsuuwrboge` (StartUps, Mumbai; verified 2026-11-02). Do not reapply or edit
   them. New SQL must be committed in the migrations directory and reviewed/tested before hosted execution.
 
 ### Migration 012 staging rollout
+
+**Historical procedure for a database still at 011.** The current replacement project has already
+received 012-015 in the reviewed recovery batch, including every app-tracker row. Do not run
+steps 2-3 there. Its Supabase history records two recovery batches rather than individual 012-015
+entries; this is intentional, not missing DDL. See [recovery evidence](SUPABASE_RECOVERY.md).
 
 Prerequisites: independent SQL/security review, Ryan's explicit approval and window, owner DSN entered
 privately in a one-off migration shell, and no web/worker process running against staging.

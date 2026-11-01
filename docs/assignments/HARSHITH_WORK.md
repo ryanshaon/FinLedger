@@ -4,8 +4,11 @@ Updated 2026-10-24 after [PR #41](https://github.com/ryanshaon/FinLedger/pull/41
 [#47](https://github.com/ryanshaon/FinLedger/pull/47) and Ruthvik's post-Harshith changes merged into main (`4bbf722`).
 This is your only active assignment file.
 
-**Status: local work complete; hosted work not started.** Every §2a item is done locally. All hosted tasks in §2
-are open and wait on Ryan's approvals.
+**Updated 2026-11-02: local work complete; replacement database restored.** Current staging is
+**StartUps / FinLedger**, `smnfnnwmasnsuuwrboge` (Mumbai). Migrations **001-015** and the private
+empty bucket are applied; do not repeat the old migration-012 rollout. Hosted AI/tenant proof
+passed **11/11**, all 30 application tables have RLS, and API table/function grants are zero.
+See [recovery evidence](../SUPABASE_RECOVERY.md). Runtime deployment and credentials remain open.
 
 ## 1. Completed — do not rebuild
 
@@ -32,7 +35,7 @@ These are CI results for the reviewed PR, not a new local run.
   Local run on PostgreSQL 16: **165 AI / 369 platform / 71 UI passed**, mock **3/3 + 6/6**, 0 failed, 0 skipped.
 
 **Local backend milestone and rollout preparation completed. Hosted operations are not completed.**
-Migrations 012–014 are committed but documented as **not applied hosted**; verify actual history before any action.
+Migrations 012–015 were applied to the replacement project on 2026-11-02; verify current history before any action.
 
 ## 2. Remaining work, in order
 
@@ -41,9 +44,7 @@ and [Auth design](../plans/AUTH_SUPABASE_DESIGN.md) first. Use synthetic data on
 
 | Task | Prerequisite | Completion evidence |
 |---|---|---|
-| Confirm current hosted state and access needs | Owner-approved access | Redacted checklist of schema/runtime/storage/Auth state; no secret values |
-| Prepare migration 012 staging rollout | Independent SQL/security review and explicit hosted approval | Procedure, commit/blob and recovery plan done in PR #45. Still open: run Part A on staging (duplicate RAG refs, roles) and record the result |
-| Apply migration 012 once, if approved and not already applied | Approved rollout and privately entered migration credentials | Recorded commit, migration-history result, schema/RLS/grant checks and rollback-only tenant proof |
+| Confirm remaining runtime/storage/Auth configuration | Owner-approved access to the replacement project | Database baseline is verified; inventory remaining private configuration without exposing values |
 | Create/verify restricted runtime login and worker roles | Owner supplies password privately; approved grants | Session-pooler connection uses non-owner/non-BYPASSRLS login; per-process least privilege and cross-tenant denial proven |
 | Verify real private storage | Owner-private S3 configuration | Synthetic put/get/presign, unsigned-public denial and cleanup result; explicitly resolve any leftover test object |
 | Verify real ClamAV | Reachable approved scanner/runtime | Healthy scan, test-signature rejection and fail-closed outage/retry behavior; EICAR stub alone does not count |
@@ -62,8 +63,7 @@ No hosted state was read or changed. Exact missing inputs:
 
 | Task | Missing input (owner: Ryan unless noted) |
 |---|---|
-| Hosted state check | Approved owner session to run Part A; current staging facts date from 2026-10-09 |
-| Migration 012 | Named independent SQL/security reviewer, explicit apply approval and window, owner DSN entered privately |
+| Hosted state check | Current database evidence is dated 2026-11-02; remaining work is runtime configuration and live acceptance, including document UPDATE/DELETE isolation |
 | Runtime logins | Approval of the five-login layout, one private password per login, decision on `finledger_queue_ops` for the API |
 | Private storage | Supabase Storage S3 access key pair in secret settings (bucket, endpoint and region are already known) |
 | ClamAV | Approved place to run `clamd` reachable from workers; `FINLEDGER_CLAMD_HOST`/`PORT` |

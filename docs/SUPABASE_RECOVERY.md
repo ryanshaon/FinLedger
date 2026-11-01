@@ -41,7 +41,8 @@ files immediately inside `migrations/`.
    012-015 and `recovery/current_015_history.sql`. These are forward upgrades for
    the current application, not contents of the October 15 backup.
 4. Verify 15 app migration records, added tables/columns/functions, RLS and API
-   grants; run rollback-only cross-tenant checks and security advisors.
+   grants; run `recovery/verify_current.sql` (11 rollback-only AI/tenant checks)
+   and security advisors.
 5. Record actual results below and in root HANDOVER. Do not replay after success.
 
 Supabase's own migration history records the two recovery batches. The app's
@@ -52,7 +53,43 @@ dashboard settings and external integrations are not restored by this procedure.
 
 ## Verification and remaining setup
 
-Execution is pending. This document is a plan until live results are recorded.
+**Restored and verified on 2026-11-02 (Asia/Calcutta)** using SQL committed on
+`restore/new-supabase-finledger`, PR #53. Initial recovery SQL/security review
+found no actionable issue; restore commit `f179caa` passed test/image CI before
+execution. Its CI suites: **254 AI / 378 platform / 101 UI passed**, mock
+**3/3 structural + 6/6 extraction**. These are CI counts, not local reruns.
+
+Hosted migration batches (UTC identifiers):
+
+| Version | Name | Result |
+|---|---|---|
+| `20261101231007` | `restore_backup_20261015_baseline` | Applied |
+| `20261101231038` | `upgrade_recovered_finledger_through_015` | Applied |
+
+Before the forward upgrade, all **26** baseline table names/column lists,
+row counts and **23** policy names matched the private backup exactly. All
+baseline tables had RLS enabled; 11 app migration rows and the private 25 MiB
+bucket were present. This comparison did not independently diff every constraint
+or function body; those were restored from the reviewed, matching migrations.
+
+After upgrade: **30** public/private application tables, all RLS enabled; all
+15 app migration filenames present; no direct table/function grants to
+`anon`, `authenticated` or `service_role`; unpriced usage is nullable with no
+default. Auth users and storage objects remain empty, as in the source.
+
+The committed rollback proof at `ae0df45` passed **11/11** assertions, including
+cross-tenant usage visibility/insertion denial, tenant-bound maker lookup and
+reservation, cap enforcement, settlement and non-worker denial. Synthetic firm,
+temporary role and result table cleanup were all confirmed. The original
+17-check extension included document UPDATE/DELETE tests: its connector
+confirmation expired before execution. It was replaced with the 11-check proof;
+cross-tenant document UPDATE/DELETE is **not verified on this new project**.
+
+Security advisors: no WARN or ERROR findings, only three expected INFO
+`rls_enabled_no_policy` notices on migration history and the two private
+staff-session tables, which intentionally have no direct-access policies.
+See [the advisor explanation](https://supabase.com/docs/guides/database/database-linter?lint=0008_rls_enabled_no_policy).
+
 No replacement credentials or runtime `.env` changes have been made. Database
 restoration alone does not connect the running app: restricted runtime logins,
 new project keys/S3 credentials, Auth settings and live smoke tests still need
