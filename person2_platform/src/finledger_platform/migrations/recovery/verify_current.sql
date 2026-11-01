@@ -97,4 +97,3 @@ select jsonb_build_object(
   'temporary_role_removed', not exists(select 1 from pg_roles where rolname='zz_proof_012'),
   'temporary_table_removed', to_regclass('pg_temp.zz_proof_012_results') is null
 ) as rollback_proof;
-
