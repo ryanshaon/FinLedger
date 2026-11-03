@@ -260,6 +260,12 @@ every completed or WIP change. No uncommitted implementation may remain on the P
 
 ## Latest status
 
+**2026-11-04 approval replay authorization:** branch `fix/approval-replay-authorization` fixes an
+approved-bill replay path that previously allowed a payer to request a posting job without approver
+permission. The regression failed before the fix; the full local control suite passed **114 tests**
+(one existing Starlette warning) afterward. No Supabase, migration, provider or Person 4 changes.
+Check this branch's pull request and require green CI on its final commit before merging.
+
 **2026-11-04 (Asia/Calcutta) desktop MVP and UI quality-of-life delivery:** branch
 `fix/desktop-mvp-verification`, base `d38bbe0`, [PR #54](https://github.com/ryanshaon/FinLedger/pull/54).
 Initial implementation `3acce09` is pushed with green CI `test`, `image` and `desk`

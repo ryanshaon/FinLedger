@@ -175,11 +175,12 @@ class ControlService:
             enqueue = bool(post) and not block_post
             actor, maker = str(actor_id), str(row["maker_id"])
             editors = self._editor_ids(document_id, row["created_by"])
-            if row["status"] == "approved" and row["revision"] == expected_revision and actor != maker and actor not in editors:
+            roles = self._roles(actor_id, client_id)
+            if (row["status"] == "approved" and row["revision"] == expected_revision and actor != maker and actor not in editors
+                    and roles & {Role.APPROVER, Role.FIRM_ADMIN}):
                 if enqueue: self._enqueue_post(client_id, document_id, row["revision"])
                 return self._approval_body(row["status"], row["revision"], post=post, block_post=block_post, posting=posting)
             if row["revision"] != expected_revision: raise Conflict(f"revision changed from {expected_revision} to {row['revision']}")
-            roles = self._roles(actor_id, client_id)
             try: new = transition(row["status"], Action.APPROVE_DRAFT if not enqueue else Action.APPROVE,
                                   TransitionContext(actor, roles, maker_id=maker, editor_ids=editors))
             except InvalidTransition as exc: raise Forbidden(str(exc)) from exc
