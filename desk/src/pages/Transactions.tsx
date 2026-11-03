@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import { api, errorMessage } from "@/api";
 import { Badge, statusTone } from "@/components/ui/badge";
 import { rupees } from "@/format";
-import { loadFirm } from "@/live";
 import { PageHeader } from "@/pages/Placeholder";
 import { EmptyState, TableSkeleton, bodyCell, headCell, TableScroll } from "@/pages/states";
 import { invoiceHref } from "@/router";
@@ -16,7 +15,7 @@ export function TransactionsPage({ onNavigate }: { onNavigate: (url: string) => 
 
   useEffect(() => {
     let live = true;
-    loadFirm()
+    api.clients()
       .then((firm) => {
         if (!live) return;
         setClients(firm.clients);

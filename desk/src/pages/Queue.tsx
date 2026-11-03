@@ -1,9 +1,10 @@
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { api, errorMessage } from "@/api";
 import { Button } from "@/components/ui/button";
+import { filterRows, matchesBill } from "@/deskSearch";
 import { PageHeader } from "@/pages/Placeholder";
 import { BillTable } from "@/pages/Clients";
-import { EmptyState, TableSkeleton } from "@/pages/states";
+import { EmptyState, LoadError, SearchField, TableSkeleton } from "@/pages/states";
 import { QUEUES, queueHref, type QueueKey } from "@/router";
 import type { LiveBill } from "@/live";
 
@@ -24,6 +25,8 @@ export function QueuePage({
   const current = QUEUES.find((item) => item.key === queue) ?? QUEUES[1];
   const [name, setName] = useState("");
   const [rows, setRows] = useState<LiveBill[] | null>(null);
+  const [counts, setCounts] = useState<Record<string, number>>({});
+  const [query, setQuery] = useState("");
   const [error, setError] = useState("");
   const [canUpload, setCanUpload] = useState(false);
   const [maxBytes, setMaxBytes] = useState(DEFAULT_MAX_UPLOAD);
@@ -36,11 +39,17 @@ export function QueuePage({
   const activeClient = useRef<string | null>(null);
   const inputId = useId();
   const hintId = useId();
+  const shown = rows ? filterRows(rows, query, matchesBill) : [];
+  const emptyAction = queue === "needs_review"
+    ? { label: "Back to clients", url: "/clients" }
+    : { label: "Go to needs review", url: queueHref(clientId, "needs_review") };
 
   useEffect(() => {
     activeClient.current = clientId;
     return () => { activeClient.current = null; };
   }, [clientId]);
+
+  useEffect(() => { setQuery(""); }, [queue]);
 
   useEffect(() => {
     let live = true;
@@ -50,6 +59,7 @@ export function QueuePage({
       .then((page) => {
         if (!live) return;
         setName(page.client.name);
+        setCounts(page.counts ?? {});
         setCanUpload((page.roles ?? []).some((role) => UPLOAD_ROLES.includes(role)));
         setMaxBytes(page.max_upload_bytes ?? DEFAULT_MAX_UPLOAD);
         setRows(page.items.map((item) => ({
@@ -142,25 +152,47 @@ export function QueuePage({
       {uploadNotice ? <p role="status" className="rounded-md border border-border bg-card px-3 py-2 text-sm">{uploadNotice}</p> : null}
       {uploadError ? <p role="alert" className="rounded-md border border-border bg-muted px-3 py-2 text-sm">{uploadError}</p> : null}
       <div className="flex flex-wrap gap-2">
-        {QUEUES.map((item) => (
-          <a
-            key={item.key}
-            href={queueHref(clientId, item.key)}
-            aria-current={item.key === queue ? "page" : undefined}
-            onClick={(event) => { event.preventDefault(); onNavigate(queueHref(clientId, item.key)); }}
-            className={`rounded-full border px-3 py-1 text-xs ${item.key === queue ? "border-foreground bg-foreground text-background" : "border-border text-muted-foreground hover:bg-muted"}`}
-          >
-            {item.label}
-          </a>
-        ))}
+        {QUEUES.map((item) => {
+          const total = counts[item.key];
+          return (
+            <a
+              key={item.key}
+              href={queueHref(clientId, item.key)}
+              aria-current={item.key === queue ? "page" : undefined}
+              aria-label={typeof total === "number" ? `${item.label}: ${total}` : undefined}
+              onClick={(event) => { event.preventDefault(); onNavigate(queueHref(clientId, item.key)); }}
+              className={`rounded-full border px-3 py-1 text-xs ${item.key === queue ? "border-foreground bg-foreground text-background" : "border-border text-muted-foreground hover:bg-muted"}`}
+            >
+              {item.label}
+              {typeof total === "number" ? <span className="ml-1.5 tabular-nums opacity-80">{total}</span> : null}
+            </a>
+          );
+        })}
       </div>
-      {error ? <p role="alert" className="rounded-xl border border-border bg-card px-4 py-6 text-sm">{error}</p> : null}
-      {!rows ? <TableSkeleton /> : rows.length === 0 ? (
+      {error ? (
+        <LoadError message={error} onRetry={() => setRefresh((value) => value + 1)} />
+      ) : !rows ? (
+        <TableSkeleton />
+      ) : rows.length === 0 ? (
         <div className="rounded-xl border border-border bg-card">
-          <EmptyState sentence={`No bills are in ${current.label.toLowerCase()}.`} action="Back to the client" onAction={() => onNavigate(`/clients/${clientId}`)} />
+          <EmptyState sentence={`No bills are in ${current.label.toLowerCase()}.`} action={emptyAction.label} onAction={() => onNavigate(emptyAction.url)} />
         </div>
       ) : (
-        <BillTable rows={rows} onNavigate={onNavigate} />
+        <div className="space-y-3">
+          <SearchField label="Search bills by vendor, invoice number or file name" value={query} onChange={setQuery} />
+          <p role="status" className="text-xs text-muted-foreground">
+            {query.trim()
+              ? `Showing ${shown.length} of ${rows.length} bills`
+              : `${rows.length} ${rows.length === 1 ? "bill" : "bills"}`}
+          </p>
+          {shown.length === 0 ? (
+            <div className="rounded-xl border border-border bg-card">
+              <EmptyState sentence={`No bill in ${current.label.toLowerCase()} matches “${query.trim()}”.`} action="Clear search" onAction={() => setQuery("")} />
+            </div>
+          ) : (
+            <BillTable rows={shown} onNavigate={onNavigate} />
+          )}
+        </div>
       )}
     </div>
   );

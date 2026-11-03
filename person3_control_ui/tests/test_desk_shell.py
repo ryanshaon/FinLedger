@@ -31,6 +31,23 @@ def test_default_desk_dist_is_the_repo_folder(monkeypatch):
     assert desk_dist() == ROOT / "desk" / "dist"
 
 
+def test_built_brand_images_are_served_without_exposing_other_files(tmp_path, monkeypatch):
+    monkeypatch.setenv("FINLEDGER_DESK_DIST", str(tmp_path))
+    image = b"\x89PNG\r\n\x1a\nsynthetic-brand"
+    for name in ("finledger-mark.png", "finledger-logo.png"):
+        (tmp_path / name).write_bytes(image)
+    (tmp_path / "private.txt").write_text("must not be served", encoding="utf-8")
+    client = TestClient(create_app(_Pool()))
+    for name in ("finledger-mark.png", "finledger-logo.png"):
+        response = client.get(f"/{name}")
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "image/png"
+        assert response.content == image
+    assert client.get("/private.txt").status_code == 404
+    (tmp_path / "finledger-mark.png").unlink()
+    assert client.get("/finledger-mark.png").status_code == 404
+
+
 def test_browser_html_uses_the_built_desk_and_star_accept_keeps_the_old_pages(tmp_path, monkeypatch):
     (tmp_path / "index.html").write_text("<!doctype html><title>Desk shell</title>", encoding="utf-8")
     monkeypatch.setenv("FINLEDGER_DESK_DIST", str(tmp_path))

@@ -13,7 +13,7 @@ from uuid import UUID
 from urllib.parse import unquote
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.concurrency import run_in_threadpool
 
@@ -534,3 +534,11 @@ def register_desk_api(app: FastAPI, *, pool, source_url, browser_sessions, staff
     assets = desk_dist() / "assets"
     if assets.is_dir():
         app.mount("/assets", StaticFiles(directory=assets), name="desk-assets")
+
+    @app.get("/finledger-mark.png")
+    @app.get("/finledger-logo.png")
+    def desk_brand(request: Request):
+        image = desk_dist() / request.url.path.removeprefix("/")
+        if not image.is_file():
+            raise HTTPException(404, "Brand image not found")
+        return FileResponse(image, media_type="image/png")

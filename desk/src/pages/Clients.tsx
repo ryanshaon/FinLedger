@@ -1,128 +1,83 @@
-import { useEffect, useState } from "react";
-import { errorMessage } from "@/api";
+import { useState } from "react";
 import { Badge, statusTone } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { countOf, filterRows, matchesClient } from "@/deskSearch";
 import { formatDay, rupees } from "@/format";
-import { loadClientBills, loadFirm, type LiveBill } from "@/live";
+import { useFirmSummary, type LiveBill } from "@/live";
 import { PageHeader } from "@/pages/Placeholder";
-import { bodyCell, EmptyState, headCell, TableScroll, TableSkeleton } from "@/pages/states";
+import { bodyCell, EmptyState, headCell, LoadError, SearchField, TableScroll, TableSkeleton } from "@/pages/states";
 import { invoiceHref } from "@/router";
-import type { ClientRow } from "@/types";
 
 export function ClientsPage({ onNavigate }: { onNavigate: (url: string) => void }) {
-  const [clients, setClients] = useState<ClientRow[] | null>(null);
-  const [bills, setBills] = useState<LiveBill[] | null>(null);
-  const [error, setError] = useState("");
-
-  useEffect(() => {
-    let live = true;
-    loadFirm()
-      .then((firm) => {
-        if (!live) return;
-        setClients(firm.clients);
-        setBills(firm.bills);
-      })
-      .catch((reason: unknown) => {
-        if (live) setError(errorMessage(reason, "The desk could not load clients."));
-      });
-    return () => { live = false; };
-  }, []);
+  const { firm, error, loading, reload } = useFirmSummary("The desk could not load clients.");
+  const [query, setQuery] = useState("");
+  const shown = firm ? filterRows(firm.clients, query, matchesClient) : [];
+  const byId = new Map((firm?.summaries ?? []).map((summary) => [summary.client.id, summary] as const));
 
   return (
     <div className="space-y-4">
-      <PageHeader title="Clients" description="Companies on the firm’s books. Open one to see its bills." />
-      {error ? <p role="alert" className="rounded-xl border border-border bg-card px-4 py-6 text-sm">{error}</p> : null}
-      {!clients || !bills ? <TableSkeleton /> : clients.length === 0 ? (
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <PageHeader title="Clients" description="Companies on the firm’s books. Open one to see its bills." />
+        <Button variant="outline" disabled={loading} onClick={reload}>{loading && firm ? "Refreshing…" : "Refresh clients"}</Button>
+      </div>
+      {error ? <LoadError message={error} busy={loading} onRetry={reload} /> : null}
+      {firm && firm.failed.length > 0 ? (
+        <p role="status" className="rounded-md border border-border bg-muted px-3 py-2 text-sm">
+          Counts could not be loaded for {firm.failed.join(", ")}. Try again to refresh them.
+        </p>
+      ) : null}
+      {!firm ? (error ? null : <TableSkeleton />) : firm.clients.length === 0 ? (
         <div className="rounded-xl border border-border bg-card">
           <EmptyState sentence="No clients are assigned to this firm." action="Back to the dashboard" onAction={() => onNavigate("/")} />
         </div>
       ) : (
-        <TableScroll className="min-w-0">
-          <thead>
-            <tr>
-              <th className={headCell}>Client</th>
-              <th className={headCell}>GSTIN</th>
-              <th className={`${headCell} text-right`}>Open bills</th>
-              <th className={`${headCell} text-right`}>Needs review</th>
-            </tr>
-          </thead>
-          <tbody>
-            {clients.map((client) => {
-              const rows = bills.filter((bill) => bill.clientId === client.id);
-              const review = rows.filter((bill) => bill.queue === "needs_review" || bill.queue === "new");
-              const href = `/clients/${client.id}`;
-              return (
-                <tr key={client.id} className="border-b border-border last:border-0 hover:bg-muted/70">
-                  <td className={bodyCell}>
-                    <a href={href} onClick={(event) => { event.preventDefault(); onNavigate(href); }} className="font-medium">
-                      {client.name}
-                    </a>
-                  </td>
-                  <td className={`${bodyCell} tabular-nums text-muted-foreground`}>{client.gstin || "—"}</td>
-                  <td className={`${bodyCell} text-right tabular-nums`}>{rows.length}</td>
-                  <td className={`${bodyCell} text-right tabular-nums`}>{review.length}</td>
+        <div className="space-y-3">
+          <SearchField label="Filter companies by name or GSTIN" value={query} onChange={setQuery} />
+          <p role="status" className="text-xs text-muted-foreground">
+            {query.trim()
+              ? `Showing ${shown.length} of ${firm.clients.length} companies`
+              : `${firm.clients.length} ${firm.clients.length === 1 ? "company" : "companies"}`}
+          </p>
+          {shown.length === 0 ? (
+            <div className="rounded-xl border border-border bg-card">
+              <EmptyState sentence={`No company matches “${query.trim()}”.`} action="Clear search" onAction={() => setQuery("")} />
+            </div>
+          ) : (
+            <TableScroll className="min-w-0">
+              <thead>
+                <tr>
+                  <th className={headCell}>Client</th>
+                  <th className={headCell}>GSTIN</th>
+                  <th className={`${headCell} text-right`}>Needs review</th>
+                  <th className={`${headCell} text-right`}>New</th>
+                  <th className={`${headCell} text-right`}>Exceptions</th>
+                  <th className={`${headCell} text-right`}>Open bills</th>
                 </tr>
-              );
-            })}
-          </tbody>
-        </TableScroll>
-      )}
-    </div>
-  );
-}
-
-export function ClientDetail({ clientId, onNavigate }: { clientId: string; onNavigate: (url: string) => void }) {
-  const [client, setClient] = useState<ClientRow | null>(null);
-  const [rows, setRows] = useState<LiveBill[] | null>(null);
-  const [missing, setMissing] = useState(false);
-  const [error, setError] = useState("");
-
-  useEffect(() => {
-    let live = true;
-    loadFirm()
-      .then(async (firm) => {
-        const found = firm.clients.find((item) => item.id === clientId);
-        if (!found) {
-          if (live) setMissing(true);
-          return;
-        }
-        const bills = await loadClientBills(found);
-        if (!live) return;
-        setClient(found);
-        setRows([...bills].sort((a, b) => (b.invoice_date || "").localeCompare(a.invoice_date || "")));
-      })
-      .catch((reason: unknown) => {
-        if (live) setError(errorMessage(reason, "The desk could not load this client."));
-      });
-    return () => { live = false; };
-  }, [clientId]);
-
-  if (missing) {
-    return (
-      <div className="space-y-4">
-        <PageHeader title="Client" description="This company is not on the firm’s list." />
-        <div className="rounded-xl border border-border bg-card">
-          <EmptyState sentence="This client is not on the desk." action="Back to clients" onAction={() => onNavigate("/clients")} />
+              </thead>
+              <tbody>
+                {shown.map((client) => {
+                  const summary = byId.get(client.id);
+                  const count = (...keys: string[]) => (summary ? String(countOf(summary.counts, ...keys)) : "—");
+                  const href = `/clients/${client.id}`;
+                  return (
+                    <tr key={client.id} className="border-b border-border last:border-0 hover:bg-muted/70">
+                      <td className={bodyCell}>
+                        <a href={href} onClick={(event) => { event.preventDefault(); onNavigate(href); }} className="font-medium">
+                          {client.name}
+                        </a>
+                      </td>
+                      <td className={`${bodyCell} tabular-nums text-muted-foreground`}>{client.gstin || "—"}</td>
+                      <td className={`${bodyCell} text-right tabular-nums`}>{count("needs_review")}</td>
+                      <td className={`${bodyCell} text-right tabular-nums`}>{count("new")}</td>
+                      <td className={`${bodyCell} text-right tabular-nums`}>{count("exception")}</td>
+                      <td className={`${bodyCell} text-right tabular-nums`}>{count("new", "needs_review", "approved", "exception")}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </TableScroll>
+          )}
         </div>
-      </div>
-    );
-  }
-
-  const open = rows || [];
-  return (
-    <div className="space-y-4">
-      <PageHeader
-        title={client?.name || "Client"}
-        description={client
-          ? `${client.gstin || "No GSTIN on file"}. ${open.length} open ${open.length === 1 ? "bill" : "bills"}.`
-          : "Bills and status for this client."}
-      />
-      {error ? <p role="alert" className="rounded-xl border border-border bg-card px-4 py-6 text-sm">{error}</p> : null}
-      {!rows ? <TableSkeleton /> : rows.length === 0 ? (
-        <div className="rounded-xl border border-border bg-card">
-          <EmptyState sentence="No bills are on file for this client." action="Back to clients" onAction={() => onNavigate("/clients")} />
-        </div>
-      ) : (
-        <BillTable rows={rows} onNavigate={onNavigate} />
       )}
     </div>
   );

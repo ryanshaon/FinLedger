@@ -1,5 +1,7 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { Search } from "lucide-react";
+import { useEffect, useId, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 
 export function useReady() {
@@ -33,6 +35,26 @@ export function EmptyState({ sentence, action, onAction }: { sentence: string; a
     <div className="px-4 py-8 text-center">
       <p className="text-sm text-muted-foreground">{sentence}</p>
       <Button variant="outline" size="sm" className="mt-3" onClick={onAction}>{action}</Button>
+    </div>
+  );
+}
+
+export function LoadError({ message, onRetry, busy = false }: { message: string; onRetry: () => void; busy?: boolean }) {
+  return (
+    <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card px-4 py-4 text-sm">
+      <p>{message}</p>
+      <Button variant="outline" size="sm" disabled={busy} onClick={onRetry}>Try again</Button>
+    </div>
+  );
+}
+
+export function SearchField({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+  const id = useId();
+  return (
+    <div className="relative w-full max-w-md">
+      <label htmlFor={id} className="sr-only">{label}</label>
+      <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+      <Input id={id} type="search" autoComplete="off" value={value} placeholder={label} onChange={(event) => onChange(event.target.value)} className="pl-9" />
     </div>
   );
 }

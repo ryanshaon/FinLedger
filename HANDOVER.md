@@ -60,6 +60,7 @@ Claude does the same in reverse when handing to you.
   joining the project; this handover remains authoritative for decisions and hosted state.
 
 - GitHub: `ryanshaon/FinLedger`. Default branch `main` (protected by habit: changes go via PR, CI must be green).
+- Pass `--repo ryanshaon/FinLedger` to `gh` commands: this fork's CLI default may select the upstream repository.
 - Windows checkout: `C:\Users\ryans\OneDrive\Documents\Studies\Projects\FinTechShi\FinLedger_GitHub`.
 - Layout: `packages/`, `evals/`, `person1_ai_rag/` (Person 1 AI/RAG) · `person2_platform/` (API, tenancy, DB,
   workers, storage, auth) · `person3_control_ui/` (controls, workflow, review UI) · `person4_tally/` (out of scope).
@@ -74,10 +75,16 @@ PYTHONPATH=evals person2_platform/.venv/bin/python evals/run_evals.py --provider
 PYTHONPATH=person2_platform/src person2_platform/.venv/bin/python -m pytest person2_platform/tests -q
 PYTHONPATH=person2_platform/src:person3_control_ui/src person3_control_ui/.venv/bin/python -m pytest person3_control_ui/tests -q
 docker build -t finledger:ci .        # CI "image" job
+( cd desk && npm ci && npm test && npm run build )         # CI "desk" job
+( cd desk && npx --no-install playwright-core install --with-deps chromium && npm run test:browser )
 ```
 
-Verified baseline through PR #30: Person 1 **43 passed**, evals **3/3 + 5/5**, Person 2 **333 passed**,
-Person 3 **55 passed**; `test` + `image` CI green on `731f9e9`. Re-run exact counts after code changes.
+Verified local baseline: packages + evals **257 passed**, platform **378 passed** (2026-11-02/03),
+mock evals **3/3 + 6/6**. Updated 2026-11-04: complete control suite **113 passed**, desk Node helpers
+**8 passed**, Chromium **14 passed** (synthetic API), production build passed. Existing Starlette warning remains.
+Initial implementation `3acce09` passed all CI jobs (`test`, `image`, `desk`, run `41698738740`).
+Final-head checks and integration are recorded on [PR #54](https://github.com/ryanshaon/FinLedger/pull/54).
+Re-run affected checks after behavior changes and require exact-head green CI before merging.
 - Cloud containers: PostgreSQL may be installed but not on PATH. Use
   `export PATH=/usr/lib/postgresql/16/bin:$PATH`.
 
@@ -138,11 +145,12 @@ Gotchas:
 | Auth subject link 008 | `migrations/008_supabase_auth_subject.sql` | applied on staging. Rule: **never auto-link by email/JWT metadata**; admin links explicitly |
 | Supabase JWT verifier + Auth/session backend | `finledger_platform/supabase_auth.py`, `auth_gateway.py`, `browser_sessions.py` | tested offline and with local Postgres; PRs #7–#9 merged. Browser routes are on `main`, not deployed to staging |
 | Staging proof tools | `finledger-platform isolation-check`, `finledger-platform s3-smoke` | tested; s3-smoke never run against real Supabase (no valid keys yet) |
-| Runtime image + local stack | `Dockerfile`, `compose.yaml` | image includes installed `finledger-ai` (PR #17); image CI verifies imports, resources and hosted mock guards. `extract-worker` service (mock, local only); no `score` consumer |
+| Runtime image + local stack | `Dockerfile`, `compose.yaml` | image includes installed `finledger-ai` and built desk; CI verifies imports, assets and hosted mock guards. Ingest, extract, score and map workers are wired for local mock verification; hosted activation remains gated |
 | Control UI entry point | `finledger-control` | uses `make_pool` (RLS guard) and full S3 settings |
 | Staff invites + first login | `finledger_platform/staff_invites.py`, Person 3 `/admin/staff`, `/auth/accept` | merged in PR #15; tested offline with fake Auth only. Disabled until `SUPABASE_SECRET_KEY` is set |
 | Worker diagnostic privacy | `worker.py`, `outbox_worker.py`, `tests/test_worker_diagnostics.py` | PR #18: fixed failure categories, no exception payload in worker-owned logs or standard escaping tracebacks; retry/rollback/lease recovery tested |
 | Auth design | `docs/plans/AUTH_SUPABASE_DESIGN.md` | implemented except staging Auth settings, hosting and real-user E2E |
+| Desktop MVP (`desk/`, `person3_control_ui/.../desk_api.py`) | staff upload, review checks, second-reviewer approval, company-scoped retrieval | on branch `fix/desktop-mvp-verification`, implementation `3acce09`; tested locally with a mock provider and synthetic API; not deployed |
 
 ## ✅ Owner checklist (things only the owner can do)
 
@@ -185,12 +193,13 @@ Tick these off in order. An agent can help explain each step but must never see 
 
 | # | Item | State | Blocked on |
 |---|---|---|---|
+| 0 | **Desktop MVP delivery:** commit `fix/desktop-mvp-verification`, push, open the PR, exact-head CI `test`, `image` and `desk` | implementation and UI follow-up complete locally; PR #54 carries final-head CI and integration status | none; no hosted changes |
 | 1 | **S3 smoke test against Supabase** (`FINLEDGER_STORE=s3 … finledger-platform s3-smoke`) | code ready, never run live | owner checklist 3 |
 | 2 | **Sign-in staging E2E** (Playwright: invite → set password → login → TOTP → client list) | all code merged (PRs #7–#9, #15); migrations 009–011 applied, **never re-apply** | owner checklist 4 + hosting |
 | 3 | **App login role on staging** (`fl_app`-style, member of `finledger_app` + worker roles, via the Supabase **session pooler**) | not created | owner checklist 6 |
 | 4 | **Email delivery** (Resend outbox implemented; inbound webhook untested) | code ready | owner checklist 7 |
 | 5 | **Hosting** (recommendation: AWS ECS/Fargate Mumbai next to Supabase `ap-south-1`; Render is the simple alternative) | image ready | owner checklist 8 |
-| 6 | **Person 1 release blockers:** live provider, extract queue consumer, persistent RAG/usage/cap state, PII policy | plan in the audit (documentation only) | owner checklist 5 (except 6a below) |
+| 6 | **Person 1 release blockers:** live provider activation, PII policy, real-document extraction proof (the extract, score and map consumers and durable usage/RAG state exist and run locally with the mock provider) | opt-in Gemini path present, never run | owner checklist 5 (except 6a below) |
 | 6a | **Package Person 1 into the runtime image** | implemented and verified in PR #17 | none; no provider or consumer added |
 | 6b | **Worker diagnostic sanitization** | implemented and verified in PR #18 | none; no hosted changes |
 | 6c | **Malformed control form inputs** | PR #21 integrated with green CI; four regression cases | none; no hosted changes |
@@ -218,6 +227,12 @@ and scanner deadlines/post-auth email pool acquisition (PR #30)
 are implemented and verified. Do not repeat them.** The remaining Open work items need credentials, configuration, an approved hosting account/budget,
 owner policy decisions, or real query plans. Start from current `main` and inspect the linked PRs before editing.
 
+**Desktop MVP delivery (first; needs no hosted access):** branch `fix/desktop-mvp-verification` carries the desktop MVP,
+implementation `3acce09` on `d38bbe0` plus the completed usability follow-up.
+[PR #54](https://github.com/ryanshaon/FinLedger/pull/54) is the delivery record. Before integration require exact-head
+green CI `test`, `image` and `desk`; after integration resume only the owner-unblocked hosted gates below. Apply no SQL, change nothing in Supabase, enable no provider
+and add no paid resource as part of it. Then continue with the numbered items below.
+
 **Metadata correction completed with explicit owner approval:** PR #19 had green `test` and `image` checks
 on `f7cc5ac`. An exact-lease push replaced the expected `03ec760` remote tip with that reviewed tip.
 Replacement commits `d77b124` and `12c93c1` preserve the original application trees and dates, with the
@@ -244,6 +259,40 @@ every completed or WIP change. No uncommitted implementation may remain on the P
 ---
 
 ## Latest status
+
+**2026-11-04 (Asia/Calcutta) desktop MVP and UI quality-of-life delivery:** branch
+`fix/desktop-mvp-verification`, base `d38bbe0`, [PR #54](https://github.com/ryanshaon/FinLedger/pull/54).
+Initial implementation `3acce09` is pushed with green CI `test`, `image` and `desk`
+([run](https://github.com/ryanshaon/FinLedger/actions/runs/41698738740)). The follow-up completes the requested
+usability pass and documentation. No half-written feature is intentionally parked. Consult PR #54 for the final
+head's CI and integration state; merge only with green checks on that exact head.
+
+- **Workflow:** bounded PDF/JPEG/PNG staff upload; AAL2, role, company and CSRF checks before streaming,
+  membership/role rechecked before saving; original signed only after scanning; source/status before draft;
+  tax and all risk marks; own-edit approval denied; desk approval always `post: false`. Local all-worker
+  journey proves ingest/extract(mock)/score/map, independent approval without posting, and reuse of a saved
+  party-ledger correction on a second invoice.
+- **Retrieval:** reject known conflicting supplier GSTIN memory before top-k; preserve missing-GSTIN fallback;
+  index correction `created_at` so newest equally relevant records win rather than arbitrary hash order.
+- **UI:** company/GSTIN header search, company/bill filters, queue counts, dashboard workload shortcuts,
+  honest metrics, timestamps and refresh/retry, partial-load warnings, keyboard skip link and narrow layouts.
+  Company summaries use one queue request per company instead of four; unused duplicate loaders removed.
+- **Packaging:** Node 24 builds the desk into the runtime image. Two allowlisted PNG routes serve brand
+  images; unrelated files remain 404. Favicon added. The logo regression failed before the fix.
+- **Verified:** packages/evals **257**, platform **378** (2026-11-02/03 baseline); full control **113**, Node
+  helpers **8**, Chromium **14**, production build passed 2026-11-04. Mock evals **3/3 structural, 6/6 exact**.
+  Control/platform retain one existing Starlette warning. Browser API is synthetic; worker tests use a
+  deterministic provider and EICAR stub. Docker is absent locally; initial image build passed in CI.
+- **Visual checks:** light/dark dashboard and invoice rendered and inspected. Main text pairs measure
+  5.60–11.59:1 contrast; keyboard skip/search and 390px layouts tested. Screen readers were not tested.
+- **Hosted changes:** none. No SQL/migrations, Supabase/Auth/storage settings, credentials, model calls,
+  email or deployment changes. Person 4 is untouched; exactly three assignment files remain.
+
+**Next work:** finish exact-head CI/integration for PR #54 if still open, then existing owner-gated runtime
+login, Auth, storage, scanner, hosting and live-provider proofs. Do not repeat completed work or activate/buy
+resources without recorded decisions. This is local/mock verification, not production readiness. The primary
+MVP excludes email, finished every-bill TDS, PO/GRN/three-way screens, outstanding bills, Tally posting, bank
+matching, payments and GST filing. Preserve future connector code. See [release evidence](docs/RELEASE_EVIDENCE.md).
 
 **2026-11-02 replacement Supabase restored:** Branch `restore/new-supabase-finledger`, PR #53.
 Owner supplied the October 15 private gzip backup and authorized the new StartUps project

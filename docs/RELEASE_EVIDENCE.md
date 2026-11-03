@@ -1,3 +1,121 @@
+# Release evidence — 2026-11-04 desktop MVP, local verification
+
+Branch `fix/desktop-mvp-verification`. Base `d38bbe0fe261f794c41fc84ecc5ac46dce647feb` (`d38bbe0`), which
+was also `origin/main` with no open pull requests when last fetched on 2026-11-04. Implementation commit: `3acce09215f5b95b3c267b38320db92eaa9f1c41`.
+Documentation and subsequent UI improvements are tracked on the same branch.
+The test runs below were made on 2026-11-02 and 2026-11-03 on that tree (Windows, Python 3.12, a throwaway
+PostgreSQL 18 cluster started outside the restricted runner, Node 24.15.0) and were **not rerun on 2026-11-04**.
+GitHub CI `test`, `image` and `desk` passed on implementation commit `3acce09`:
+[CI run](https://github.com/ryanshaon/FinLedger/actions/runs/41698738740). Final branch head must pass again before merge.
+These local runs are not an independent security review and are not a deployment or customer-readiness claim.
+
+No Supabase SQL, configuration or key, hosted Auth, S3, scanner, email, model provider or hosting was touched or
+contacted. No secret was read or printed. `person4_tally/` and migrations `001`–`015` were not edited. Docker is not
+installed on this machine; GitHub CI built and verified the image. `--live-synthetic-eval` was not run.
+
+## Results
+
+| Check | Result |
+|---|---|
+| `packages` + `evals` pytest | **257 passed** |
+| `person2_platform/tests` | **378 passed**, 1 existing Starlette warning |
+| `person3_control_ui/tests` | **112 passed**, same warning |
+| `evals/run_evals.py --provider-mode mock` | **3/3 structural, 6/6 exact** |
+| `desk`: `npm test` | **4 passed** |
+| `desk`: `npm run build` | **passed** (`tsc --noEmit && vite build`) |
+| `desk`: `npm run test:browser` | **8 passed**, 0 skipped (Chromium against a synthetic, intercepted API) |
+| `git diff --check` | clean |
+| `docker build -t finledger:ci .` | **not run** (no Docker) |
+| `evals/run_evals.py --live-synthetic-eval` | **not run** |
+
+The Python commands are the ones in [HANDOVER.md](../HANDOVER.md) "How to verify". One Windows-only test, the refused-connection
+HTTP-client check, timed out at 1 s: measured 1 s gives `TimeoutError` and 3 s gives `ConnectionRefusedError` after about 2.03 s, so the test
+timeout is now 3 s. No production transport code changed.
+
+## What the tree shows locally
+
+- **Upload boundary** (`person3_control_ui/tests/test_mvp_upload.py`): a clerk or firm admin can upload one raw PDF, JPG or PNG; the original
+  bytes and hash are stored, the document is `received` with `virus_ok` null and an `ingest` job is written. Approvers and payers get 403, as do
+  a wrong CSRF token, a foreign origin and a foreign company; an oversized body (declared or streamed) gets 413 and a non-invoice type 422, with nothing saved.
+- **Whole journey** (`test_staff_upload_all_consumers_correction_and_second_reviewer` in `person3_control_ui/tests/test_local_journey.py`): staff upload
+  → real ingest, extract (mock provider), score and map consumers → `in_review` with an original link → clerk saves a party-ledger
+  correction → the clerk's own approval is 403 → a second reviewer approves with `post` false → zero `post` jobs and one approval →
+  a second upload with a different invoice number retrieves the saved correction as its party ledger.
+- **Original and approval record**: the stored bytes equal the uploaded bytes. The original link is signed only after the virus scan passed and never
+  for a quarantined bill. A bill that is received but not yet mapped opens as an empty review with edit and approve disabled.
+- **Legacy HTML review fallback**: review found it returned 200 for such a bill; it now returns 404 (the JSON source-only view still returns 200).
+- **Retrieval**: a memory whose known vendor GSTIN conflicts with the bill is dropped before top-k; the missing-GSTIN fallback is kept; equally
+  scored memories rank newest first through indexed `created_at`. The conflict, recency and top-k crowding regressions failed before the fix and pass after. No model is retrained.
+- **Desk** (`desk/tests/mvp.browser.test.cjs`): upload headers and bytes, role gating, client-side size and type limits, a late upload
+  that cannot navigate after a company switch, tax fields and passed / failed / not-checked marks, approval sends `post: false`, a revision conflict
+  reloads the latest bill, and unprocessed bills expose no edit or approval controls. Posted, Transactions, outstanding amounts, TDS and three-way panels are no longer on the primary screens.
+- **Packaging** (executed successfully in GitHub CI on `3acce09`): the `Dockerfile` has a Node 24 `desk-build` stage that runs `npm test` and `npm run build` and copies `dist` into the final image;
+  `ci.yml` has a `desk` job (Node 24, helper tests, build, Chromium with `playwright-core` pinned to 1.62.1) and an image check that `dist` exists.
+
+The provider is a deterministic mock and the scanner an EICAR stub, so none of this is real OCR or ClamAV behaviour. The browser checks do not talk to the real server.
+
+## Known limits (found in review, not fixed here)
+
+- Until the ingest worker's scan sets `virus_ok`, the original is stored but cannot be opened, by design.
+- The staff upload route has no per-user rate limit (the public portal has one) and holds up to about 50 MiB per request.
+- Uploading the same file twice creates two documents; duplicate detection happens only after extraction.
+- File type detection accepts `%PDF-` anywhere in the first 1 KiB, so a polyglot file can be stored as PDF. The scanner is the control.
+- `scripts/test.ps1` does not run the desk checks.
+
+## Not done — owners and blockers
+
+Everything hosted stays open. A green local run is not customer readiness.
+
+| Item | Owner |
+|---|---|
+| Approve provider, model, location, retention, budget and capacity; supply private credentials; final acceptance | Ryan (`RYAN_WORK.md`). Not approved; the live switch stays off |
+| Restricted app and worker logins, S3 smoke, Auth settings, real ClamAV, workers running, hosting, email | Harshith (`HARSHITH_WORK.md`). Open |
+| Real staging sign-in, upload-to-approval walk-through, live synthetic eval | Ruthvik (`RUTHVIK_WORK.md`), after the two rows above. Not run |
+| Green CI `test`, `image` and `desk` on the exact pull request head | Passed on `3acce09`; required again on final head before merge |
+
+## 2026-11-04 usability follow-up: design, implementation and checks
+
+Chosen approach: preserve React/Tailwind/Shadcn, search only assigned companies, filter only loaded queue
+metadata. A new global search store or command palette would add needless state. Implementation order:
+shared filter regressions, summary loading, dashboard/company/queue controls, keyboard navigation, then
+browser/build and visual verification. All selected improvements are implemented.
+
+- Header company/GSTIN search supports Enter, arrows and Escape and clears on navigation.
+- Dashboard separates review/new/approved/exception counts with review value, refresh time and company
+  queue shortcuts. Existing per-queue counts reduce summary requests from four to one per company.
+- Company and bill filters have clear/no-match states. Queue tabs show counts. Complete and partial
+  failures have refresh/retry, retaining available data while marking missing counts rather than showing zero.
+- Keyboard skip link and focusable main landmark; dashboard, Clients and queue do not overflow at 390px.
+  Main text contrast pairs: 11.59:1, 5.60:1, 7.99:1, 5.69:1. Screen-reader testing not performed.
+- Packaged PNG routes fixed with an observed 404-before/200-after regression; unrelated files stay denied.
+  Existing mark used as favicon; browser fixtures serve real PNG assets. Light/dark dashboard and invoice
+  screenshots inspected locally using synthetic data.
+- New search/count regressions failed against the old UI; the original eight browser flows passed.
+  Final results: **8 Node helpers**, **14 Chromium tests**, **production build passed**; full control suite
+  **113 passed**, one existing Starlette warning. AI/platform unchanged from verified 257/378 baseline.
+
+Commands from the repository root (PowerShell):
+
+```powershell
+$env:FINLEDGER_TEST_OWNER_DSN = $null
+$env:PYTHONPATH = 'person2_platform/src;person3_control_ui/src'
+person3_control_ui/.venv/Scripts/python.exe -m pytest person3_control_ui/tests -q --tb=short --basetemp=.pytest-mvp-ui-final
+npm --prefix desk test
+npm --prefix desk run build
+npm --prefix desk run test:browser
+```
+
+[PR #54](https://github.com/ryanshaon/FinLedger/pull/54) records final-head CI and integration. Initial implementation
+`3acce09` passed all three CI jobs; require the updated head to pass again before merge. No hosted changes.
+
+## Rollback
+
+Revert the pull request. No migration or hosted configuration changed.
+
+---
+
+Earlier report from 2026-10-27, kept unchanged below.
+
 # Release evidence — 2026-10-27 local journey
 
 Branch `feat/local-journey-proof`. Base is `b8cf3a37e221f24cec8b6b9402e434ad005e5b8f` (`b8cf3a3`).
