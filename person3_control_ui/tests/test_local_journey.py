@@ -34,7 +34,7 @@ def journey_dsn(owner_dsn, app_dsn):
         conn.execute("drop role if exists fl_journey")
         conn.execute(
             "create role fl_journey login password 'fl_journey_test_pw' in role "
-            "finledger_app, finledger_worker_ingest, finledger_worker_extract, finledger_worker_score"
+            "finledger_app, finledger_worker_ingest, finledger_worker_extract, finledger_worker_score, finledger_worker_map"
         )
     info = conninfo_to_dict(owner_dsn)
     info.update(user="fl_journey", password=JOURNEY_PASSWORD)
@@ -95,12 +95,12 @@ def pdf(lines: list[str]) -> bytes:
     return buf.getvalue()
 
 
-def synthetic_invoice() -> bytes:
+def synthetic_invoice(number="INV-2026-0042") -> bytes:
     return pdf([
         "Vendor: Shree Ganesh Metals",
         "GSTIN: 27AAACS1234A1Z2",
         "Date: 2026-09-15",
-        "Inv No: INV-2026-0042",
+        f"Inv No: {number}",
         "| Item | HSN | Qty | Rate | Taxable | CGST | SGST |",
         "| --- | --- | --- | --- | --- | --- | --- |",
         "| HR Coil | 7208 | 10 | 10000 | 100000 | 9000 | 9000 |",
@@ -261,6 +261,67 @@ def test_happy_path_reaches_human_approval_and_replay_does_not_double_write(
     assert count(journey, cid, "select count(*) as n from risk_assessments where document_id = %s", doc_id) == 1
     assert count(journey, cid, "select count(*) as n from correction_events where document_id = %s", doc_id) == 1
     assert count(journey, cid, "select revision as n from canonical_invoices where document_id = %s", doc_id) == revision
+
+
+def test_staff_upload_all_consumers_correction_and_second_reviewer(world, platform, journey, journey_pool):
+    from finledger_control.api import create_app as control_app
+    from finledger_platform.map_worker import default_map, run_once as map_once
+    from test_invites import Sessions
+
+    settings, store, _ = platform
+    cid = world["client"]["id"]
+
+    def login(role):
+        browser = TestClient(control_app(
+            journey_pool, local_files=store,
+            source_url=lambda path, name: store.signed_url(path, 300, name),
+            browser_sessions=Sessions(world[role], world["client"]["firm_id"], False, "aal2"),
+        ))
+        csrf = browser.get("/api/csrf").json()["csrf_token"]
+        assert browser.post("/api/login", headers={"Origin": "http://testserver"},
+                            json={"email": f"{role}@synthetic.test", "password": "pw", "csrf_token": csrf}).status_code == 200
+        return browser, csrf
+
+    clerk, token = login("clerk")
+
+    def upload_and_process(number):
+        raw = synthetic_invoice(number)
+        response = clerk.post(f"/api/clients/{cid}/documents", content=raw,
+                              headers={"Origin": "http://testserver", "X-CSRF-Token": token,
+                                       "X-Filename": "invoice.pdf", "Content-Type": "application/pdf"})
+        assert response.status_code == 201
+        did = response.json()["received"][0]["document_id"]
+        ingest(journey, store, settings)
+        assert extract_once(journey, store, default_extract(journey)) == "extracted"
+        assert score_once(journey, default_score()) == "scored"
+        assert map_once(journey, default_map(journey)) == "mapped"
+        detail = clerk.get(f"/api/clients/{cid}/invoices/{did}").json()["invoice"]
+        assert detail["status"] == "in_review" and detail["source_url"]
+        assert detail["invoice"]["invoice_no"] == number
+        with tenant(journey, cid):
+            stored = journey.execute("select object_path from documents where id=%s", (did,)).fetchone()
+            assert store.get(stored["object_path"]) == raw
+        return did, detail
+
+    did, detail = upload_and_process("MVP-001")
+    saved = clerk.post(f"/api/clients/{cid}/invoices/{did}/edit",
+                       headers={"Origin": "http://testserver"},
+                       json={"csrf_token": token, "revision": detail["revision"],
+                             "field": "party_ledger", "value": "Ganesh Metals - AP"})
+    assert saved.status_code == 200
+    denied = clerk.post(f"/api/clients/{cid}/invoices/{did}/approve",
+                        headers={"Origin": "http://testserver"},
+                        json={"csrf_token": token, "revision": saved.json()["revision"], "post": False})
+    assert denied.status_code == 403
+    approver, approve_token = login("approver")
+    approved = approver.post(f"/api/clients/{cid}/invoices/{did}/approve",
+                             headers={"Origin": "http://testserver"},
+                             json={"csrf_token": approve_token, "revision": saved.json()["revision"], "post": False})
+    assert approved.status_code == 200 and approved.json()["status"] == "approved"
+    assert count(journey, cid, "select count(*) as n from approvals where document_id=%s", did) == 1
+    assert count(journey, cid, "select count(*) as n from jobs where document_id=%s and queue='post'", did) == 0
+    next_id, next_detail = upload_and_process("MVP-002")
+    assert next_id != did and next_detail["draft"]["party_ledger"] == "Ganesh Metals - AP"
 
 
 def test_lost_lease_does_not_settle_a_late_extract_or_score(world, platform, journey, owner):

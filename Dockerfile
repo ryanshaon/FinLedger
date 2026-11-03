@@ -8,6 +8,13 @@
 #   finledger-platform outbox-worker --client-id <uuid>
 #   finledger-control --host 0.0.0.0 --port 8770
 #   finledger-platform migrate            (one-off, owner DSN only)
+FROM node:24-slim AS desk-build
+WORKDIR /src/desk
+COPY desk/package.json desk/package-lock.json ./
+RUN npm ci
+COPY desk ./
+RUN npm test && npm run build
+
 FROM python:3.12-slim AS build
 COPY --from=ghcr.io/astral-sh/uv:0.10.9 /uv /bin/uv
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PROJECT_ENVIRONMENT=/opt/venv UV_PYTHON_DOWNLOADS=never
@@ -29,6 +36,8 @@ RUN --mount=type=secret,id=extra_ca,required=false \
 FROM python:3.12-slim
 RUN useradd --system --uid 10001 --create-home finledger
 COPY --from=build /opt/venv /opt/venv
+COPY --from=desk-build --chown=finledger:finledger /src/desk/dist /opt/finledger-desk
+ENV FINLEDGER_DESK_DIST=/opt/finledger-desk
 ENV PATH=/opt/venv/bin:$PATH PYTHONUNBUFFERED=1 FINLEDGER_STORE_ROOT=/var/lib/finledger/objects
 RUN mkdir -p /var/lib/finledger/objects && chown -R finledger /var/lib/finledger
 USER finledger

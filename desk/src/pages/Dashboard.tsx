@@ -41,8 +41,8 @@ export function Dashboard({ onNavigate }: { onNavigate: (url: string) => void })
     return (
       <div className="space-y-4">
         <PageHeader title="Dashboard" description="Accounts payable across the firm." />
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <CardSkeleton /><CardSkeleton /><CardSkeleton /><CardSkeleton />
+        <div className="grid gap-3 sm:grid-cols-3">
+          <CardSkeleton /><CardSkeleton /><CardSkeleton />
         </div>
         <TableSkeleton rows={5} />
       </div>
@@ -51,8 +51,7 @@ export function Dashboard({ onNavigate }: { onNavigate: (url: string) => void })
 
   const waiting = bills.filter((bill) => bill.queue === "needs_review" || bill.queue === "new");
   const exceptions = bills.filter((bill) => bill.queue === "exception");
-  const openAmount = bills.filter((bill) => bill.queue !== "posted").reduce((sum, bill) => sum + asAmount(bill.total), 0);
-  const posted = bills.filter((bill) => bill.queue === "posted").reduce((sum, bill) => sum + asAmount(bill.total), 0);
+  const openAmount = bills.reduce((sum, bill) => sum + asAmount(bill.total), 0);
   const recent = [...bills].sort((a, b) => (b.invoice_date || "").localeCompare(a.invoice_date || "")).slice(0, 5);
   const first = clients[0];
 
@@ -65,11 +64,10 @@ export function Dashboard({ onNavigate }: { onNavigate: (url: string) => void })
           {first && <Button onClick={() => onNavigate(`/clients/${first.id}`)}>Open {first.name}</Button>}
         </div>
       </div>
-      <section className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-4">
+      <section className="grid gap-2.5 sm:grid-cols-3">
         <Metric label="Waiting for review" value={String(waiting.length)} detail="New and needs review" />
-        <Metric label="Open amount" value={rupees(openAmount)} detail="Not yet posted" />
-        <Metric label="Exceptions" value={String(exceptions.length)} detail="Held before posting" />
-        <Metric label="Posted" value={rupees(posted)} detail="Already in the books" />
+        <Metric label="Open amount" value={rupees(openAmount)} detail="Across every queue" />
+        <Metric label="Exceptions" value={String(exceptions.length)} detail="Stopped and need a person" />
       </section>
       {clients.length === 0 ? (
         <section className="rounded-xl border border-border bg-card px-4 py-8 text-center text-sm text-muted-foreground">
@@ -114,14 +112,13 @@ export function Dashboard({ onNavigate }: { onNavigate: (url: string) => void })
               <p className="mt-2 text-sm leading-6 text-muted-foreground">
                 {waiting.length === 0
                   ? "Nothing is waiting for a person."
-                  : `${waiting.length} ${waiting.length === 1 ? "bill still needs" : "bills still need"} a person before posting.`}
+                  : `${waiting.length} ${waiting.length === 1 ? "bill still needs" : "bills still need"} a person before approval.`}
                 {exceptions.length > 0 ? ` ${exceptions.length} ${exceptions.length === 1 ? "is" : "are"} held as exceptions.` : ""}
               </p>
             </section>
             <section className="rounded-xl border border-border bg-card p-4">
               <h2 className="text-sm font-semibold">Quick actions</h2>
               <div className="mt-3 flex flex-col gap-2">
-                <Action href="/transactions" label="Reconcile the bank" onNavigate={onNavigate} />
                 {first && <Action href={`/clients/${first.id}`} label={`Open ${first.name}`} onNavigate={onNavigate} />}
                 <Action href="/clients" label="See every client" onNavigate={onNavigate} />
               </div>

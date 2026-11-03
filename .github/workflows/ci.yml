@@ -51,6 +51,24 @@ jobs:
           PYTHONPATH: person2_platform/src:person3_control_ui/src
         run: person3_control_ui/.venv/bin/python -m pytest person3_control_ui/tests -q --basetemp=.pytest-person3
 
+  desk:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: desk
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - run: npx --no-install playwright-core install --with-deps chromium
+      - run: npm run test:browser
+
   image:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -62,6 +80,9 @@ jobs:
         run: |
           docker run --rm finledger:ci finledger-platform --help
           docker run --rm finledger:ci python -c "import finledger_control.cli, finledger_platform.s3_smoke, finledger_platform.staff_invites, boto3"
+      - name: Built desk is available to the control server
+        run: |
+          docker run --rm finledger:ci python -c "import os; from pathlib import Path; root=Path(os.environ['FINLEDGER_DESK_DIST']); assert (root/'index.html').is_file(); assert any((root/'assets').glob('*.js'))"
       - name: Person1 installed runtime and hosted guards
         run: |
           docker run --rm finledger:ci python -I -c "import extract.vision_fallback, usage.model_router"

@@ -300,18 +300,28 @@ class ControlService:
               where d.status=any(%s) order by d.received_at desc""", (list(statuses[queue]),)).fetchall()
             return [dict(r) for r in rows]
 
-    def review_detail(self, client_id, document_id, source_url=None):
+    def review_detail(self, client_id, document_id, source_url=None, *, actor_id=None):
         with self._tx(client_id):
-            row = self.conn.execute("""select d.id as document_id,d.original_filename as filename,d.status,d.received_at,d.object_path,
-                c.payload as invoice,v.payload as draft,v.revision,r.score,r.band,r.marks
-              from documents d join canonical_invoices c on c.document_id=d.id
-              join voucher_drafts v on v.document_id=d.id
-              join lateral(select score,band,marks from risk_assessments where document_id=d.id order by id desc limit 1) r on true
+            row = self.conn.execute("""select d.id as document_id,d.original_filename as filename,d.status,d.received_at,d.object_path,d.virus_ok,
+                c.payload as invoice,c.maker_id,v.payload as draft,v.created_by,v.revision,r.score,r.band,r.marks
+              from documents d left join canonical_invoices c on c.document_id=d.id
+              left join voucher_drafts v on v.document_id=d.id
+              left join lateral(select score,band,marks from risk_assessments where document_id=d.id order by id desc limit 1) r on true
               where d.id=%s""", (document_id,)).fetchone()
             if not row: raise NotFound("review not found")
-            out = dict(row); out["risk"]={"score":out.pop("score"),"band":out.pop("band"),"marks":out.pop("marks")}
+            out = dict(row); out["risk"]={"score":out.pop("score"),"band":out.pop("band"),"marks":out.pop("marks") or []}
+            out["invoice"], out["draft"] = out["invoice"] or {}, out["draft"] or {}
+            out["revision"] = out["revision"] or 0
             out["ai_paragraph"] = out["draft"].get("ai_paragraph", "No AI summary was supplied with this draft.")
-            out["source_url"] = source_url(out.pop("object_path"), out["filename"]) if source_url else ""
+            path, clean = out.pop("object_path"), out.pop("virus_ok") is True
+            out["source_url"] = source_url(path, out["filename"]) if source_url and clean and out["status"] != "quarantined" else ""
+            maker, created_by = out.pop("maker_id"), out.pop("created_by")
+            if actor_id is not None:
+                roles = self._roles(actor_id, client_id)
+                own_edit = str(actor_id) == str(maker) or str(actor_id) in self._editor_ids(document_id, created_by)
+                out["can_edit"] = bool(out["draft"]) and out["status"] not in {"scheduled", "paid", "posted", "reconciled", "closed"} and bool(roles & {Role.AP_CLERK, Role.APPROVER, Role.FIRM_ADMIN})
+                out["can_approve"] = bool(out["draft"]) and out["status"] in {"in_review", "approved"} and not own_edit and bool(roles & {Role.APPROVER, Role.FIRM_ADMIN})
+                out["approval_note"] = "Another reviewer must approve a bill you made or edited." if own_edit and out["draft"] else ""
             return out
 
 

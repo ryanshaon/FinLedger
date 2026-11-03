@@ -1,15 +1,23 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { api, errorMessage } from "@/api";
+import { ApiError, api, errorMessage } from "@/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { bandText, rupees, safeSource, shown } from "@/format";
 import { PageHeader } from "@/pages/Placeholder";
 import { queueHref } from "@/router";
-import type { InvoiceResponse } from "@/types";
-import { approveChoice, matchHeadline, matchRows } from "@/threeWay";
+import type { InvoiceResponse, Mark } from "@/types";
 import { partyLedgerName, voucherRows } from "@/voucherView";
 
-const CLOSED = new Set(["scheduled", "paid", "posted", "reconciled", "closed"]);
+const EDIT_ROLES = ["ap_clerk", "approver", "firm_admin"];
+const APPROVE_ROLES = ["approver", "firm_admin"];
+const TAX_FIELDS = [
+  ["taxable", "Taxable value"],
+  ["cgst", "CGST"],
+  ["sgst", "SGST"],
+  ["igst", "IGST"],
+  ["cess", "Cess"],
+  ["round_off", "Round off"],
+] as const;
 
 export function InvoicePage({
   clientId,
@@ -58,7 +66,16 @@ export function InvoicePage({
       await reload();
       setNotice(done);
     } catch (reason) {
-      setError(errorMessage(reason, "The desk could not save that."));
+      if (reason instanceof ApiError && reason.status === 409) {
+        try {
+          await reload();
+          setError(`${errorMessage(reason, "This bill changed.")} The latest version is shown below; check it and try again.`);
+        } catch {
+          setError("This bill changed, but the latest version could not be loaded. Refresh before trying again.");
+        }
+      } else {
+        setError(errorMessage(reason, "The desk could not save that."));
+      }
     } finally {
       setBusy(false);
     }
@@ -99,15 +116,18 @@ export function InvoicePage({
   const vendor = invoice.vendor || {};
   const draft = detail.draft || {};
   const risk = detail.risk || {};
+  const marks = risk.marks || [];
   const conf = invoice.confidences || {};
   const source = safeSource(detail.source_url);
   const partyLedger = partyLedgerName(draft);
   const rows = voucherRows(draft.lines);
-  const compared = matchRows(page.match || emptyMatch);
-  const headline = page.match ? matchHeadline(page.match) : "";
-  const choice = approveChoice(page.match, page.posting);
-  const editable = !CLOSED.has(detail.status);
-  const canApprove = page.roles.includes("approver") || page.roles.includes("firm_admin");
+  const hasRole = (allowed: string[]) => page.roles.some((role) => allowed.includes(role));
+  const processed = detail.revision > 0;
+  const inReview = processed && detail.status === "in_review";
+  const canEdit = processed && (detail.status === "in_review" || detail.status === "approved")
+    && (detail.can_edit ?? hasRole(EDIT_ROLES));
+  const canApprove = inReview && (detail.can_approve ?? hasRole(APPROVE_ROLES));
+  const canSendBack = inReview && hasRole(APPROVE_ROLES);
   const back = queueHref(clientId, "needs_review");
 
   return (
@@ -117,17 +137,30 @@ export function InvoicePage({
           title={detail.filename || invoice.invoice_no || "Invoice"}
           description={`${page.client.name} · Revision ${detail.revision} · ${detail.state_label}`}
         />
-        <Button variant="outline" onClick={() => onNavigate(back)}>Back to the queue</Button>
+        <div className="flex gap-2">
+          <Button variant="outline" disabled={busy} onClick={() => void run(() => Promise.resolve(), "Bill refreshed.")}>Refresh bill</Button>
+          <Button variant="outline" onClick={() => onNavigate(back)}>Back to the queue</Button>
+        </div>
       </div>
       {error ? <p role="alert" className="rounded-md border border-border bg-muted px-3 py-2 text-sm">{error}</p> : null}
       {notice ? <p role="status" className="rounded-md border border-border bg-card px-3 py-2 text-sm">{notice}</p> : null}
+      {!processed ? (
+        <p role="status" className="rounded-md border border-border bg-card px-3 py-2 text-sm">
+          This bill has been received but is not ready for review yet. The original file is kept below.
+        </p>
+      ) : null}
       <div className="grid gap-3 xl:grid-cols-3">
         <section className="rounded-xl border border-border bg-card" aria-label="Source document">
-          <h2 className="border-b border-border px-4 py-3 text-sm font-semibold">Source document</h2>
+          <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-3">
+            <h2 className="text-sm font-semibold">Source document</h2>
+            {source ? (
+              <a href={source} target="_blank" rel="noopener noreferrer" className="text-sm font-medium underline">Open original</a>
+            ) : null}
+          </div>
           {source ? (
             <iframe title="Source document" src={source} className="h-80 w-full rounded-b-xl bg-background" />
           ) : (
-            <p className="px-4 py-8 text-sm text-muted-foreground">Source preview is unavailable. The extracted fields are on this page.</p>
+            <p className="px-4 py-8 text-sm text-muted-foreground">The original file is kept. Preview stays unavailable until the file passes its safety checks.</p>
           )}
         </section>
         <section className="rounded-xl border border-border bg-card" aria-label="Extracted fields">
@@ -138,7 +171,9 @@ export function InvoicePage({
             <Field label="Invoice number" value={shown(invoice.invoice_no)} extra={percent(conf.invoice_no)} />
             <Field label="Invoice date" value={shown(invoice.invoice_date)} extra={percent(conf.date)} />
             <Field label="Buyer GSTIN" value={shown(invoice.buyer_gstin)} />
-            <Field label="PO number" value={shown(invoice.po_number)} />
+            {TAX_FIELDS.filter(([key]) => present(invoice[key])).map(([key, label]) => (
+              <Field key={key} label={label} value={rupees(invoice[key])} />
+            ))}
             <Field label="Grand total" value={rupees(invoice.total)} extra={percent(conf.total)} />
           </dl>
         </section>
@@ -149,11 +184,21 @@ export function InvoicePage({
               <span className="block text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">Risk gate</span>
               <span className="font-medium">{bandText(risk.band, risk.score)}</span>
             </p>
-            {(risk.marks || []).filter((mark) => mark.ok === false).map((mark, index) => (
-              <p key={`${mark.check}-${index}`} className="text-sm text-muted-foreground">
-                {mark.check || "control"}: {mark.note || ""}
-              </p>
-            ))}
+            <div>
+              <h3 className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">Checks</h3>
+              {marks.length === 0 ? (
+                <p className="mt-1 text-sm text-muted-foreground">No checks have run yet.</p>
+              ) : (
+                <ul className="mt-1 space-y-1 text-sm">
+                  {marks.map((mark, index) => (
+                    <li key={`${mark.check ?? mark.field ?? "check"}-${index}`}>
+                      <span className="font-medium">{checkLabel(mark)}</span>: {markState(mark)}
+                      {mark.note ? <span className="text-muted-foreground"> — {mark.note}</span> : null}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
             <div className="space-y-3">
               <div>
                 <h3 className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">Party ledger</h3>
@@ -184,7 +229,6 @@ export function InvoicePage({
             </div>
             <dl className="divide-y divide-border">
               <Field label="GST treatment" value={shown(draft.gst?.treatment)} />
-              <Field label="TDS" value={draft.tds?.applicable ? "Applicable" : "Not applicable"} />
               <Field label="Bill reference" value={shown(draft.bill_wise?.ref)} />
             </dl>
             {detail.ai_paragraph ? <p className="text-sm leading-6 text-muted-foreground">{detail.ai_paragraph}</p> : null}
@@ -193,7 +237,7 @@ export function InvoicePage({
                 ? <li>No mapping reasons supplied.</li>
                 : draft.reasons?.map((reason) => <li key={reason}>{reason}</li>)}
             </ul>
-            {editable && (
+            {canEdit ? (
               <form className="space-y-2" onSubmit={save}>
                 <label className="block text-sm font-medium">
                   Edit party ledger
@@ -201,60 +245,27 @@ export function InvoicePage({
                 </label>
                 <Button type="submit" variant="outline" disabled={busy}>Save edit</Button>
               </form>
-            )}
-            {canApprove && (
+            ) : null}
+            {canApprove || canSendBack ? (
               <div className="flex flex-wrap gap-2">
-                {choice === "approve_and_post" ? (
-                  <Button disabled={busy} onClick={() => void run(() => api.approve(clientId, documentId, detail.revision, true), "Approved and queued to post.")}>
-                    Approve & post
-                  </Button>
-                ) : null}
-                {choice === "approve" ? (
-                  <Button disabled={busy} onClick={() => void run(() => api.approve(clientId, documentId, detail.revision, false), page.posting?.reason ? `Approved. ${page.posting.reason}` : "Approved.")}>
+                {canApprove ? (
+                  <Button disabled={busy} onClick={() => void run(() => api.approve(clientId, documentId, detail.revision, false), "Approved.")}>
                     Approve
                   </Button>
                 ) : null}
-                <Button variant="outline" disabled={busy} onClick={() => void run(() => api.sendBack(clientId, documentId, detail.revision), "Sent back for a correction.")}>
-                  Ask vendor to resend
-                </Button>
+                {canSendBack ? (
+                  <Button variant="outline" disabled={busy} onClick={() => void run(() => api.sendBack(clientId, documentId, detail.revision), "Sent back for a correction.")}>
+                    Ask vendor to resend
+                  </Button>
+                ) : null}
               </div>
-            )}
-          </div>
-        </section>
-      </div>
-      {page.match ? (
-        <section className="rounded-xl border border-border bg-card" aria-label="Three-way match">
-          <h2 className="border-b border-border px-4 py-3 text-sm font-semibold">Three-way match</h2>
-          <div className="space-y-3 p-4">
-            <p className="text-sm font-medium">{headline}</p>
-            <table className="w-full border-collapse text-sm">
-              <thead>
-                <tr className="border-b border-border text-left text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
-                  <th className="py-1.5 font-medium">Side</th>
-                  <th className="py-1.5 text-right font-medium">Quantity</th>
-                  <th className="py-1.5 text-right font-medium">Amount</th>
-                </tr>
-              </thead>
-              <tbody>
-                {compared.map((row) => (
-                  <tr key={row.side} className="border-b border-border last:border-0">
-                    <td className="py-1.5">
-                      {row.side}
-                      {row.side === "Goods receipt" ? <span className="ml-2 text-muted-foreground">quantity received</span> : null}
-                      {row.reference ? <span className="ml-2 text-muted-foreground">{row.reference}</span> : null}
-                    </td>
-                    <td className="py-1.5 text-right">{row.quantity}</td>
-                    <td className="py-1.5 text-right">{row.amount}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {page.posting?.blocked && page.posting.reason ? (
-              <p className="text-sm text-muted-foreground">{page.posting.reason}</p>
+            ) : null}
+            {inReview && !canApprove && detail.approval_note ? (
+              <p className="text-sm text-muted-foreground">{detail.approval_note}</p>
             ) : null}
           </div>
         </section>
-      ) : null}
+      </div>
     </div>
   );
 }
@@ -270,17 +281,20 @@ function Field({ label, value, extra }: { label: string; value: string; extra?: 
   );
 }
 
-const emptyMatch = {
-  applicable: false,
-  matched: false,
-  holds_review: false,
-  match_mode: "invoice_only",
-  differences: [],
-  review_note: "",
-  purchase_order: { po_number: null, quantity: null, amount: null },
-  goods_receipt: { grn_number: null, quantity_received: null },
-  invoice: { quantity: null, amount: null },
-};
+function present(value: unknown): boolean {
+  return value !== null && value !== undefined && value !== "";
+}
+
+function markState(mark: Mark): string {
+  if (mark.ok === true) return "Passed";
+  if (mark.ok === false) return "Needs attention";
+  return "Not checked";
+}
+
+function checkLabel(mark: Mark): string {
+  const text = (mark.check || mark.field || "control").replace(/_/g, " ");
+  return text.slice(0, 1).toUpperCase() + text.slice(1);
+}
 
 function percent(value: number | undefined): string {
   if (typeof value !== "number" || !Number.isFinite(value)) return "";

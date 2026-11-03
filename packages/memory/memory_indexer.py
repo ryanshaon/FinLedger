@@ -25,6 +25,7 @@ class MemoryIndexer:
             "gstin": event.vendor_gstin, "hsn": event.hsn_sac, "description": event.description,
             "document_id": event.document_id, "field": event.field,
             "new_ledger": event.new_ledger,
+            "created_at": event.created_at,
         })
 
     def index_posted_bill(self, client_id: str, document_id: str, erp_id: str, vendor_gstin: str,

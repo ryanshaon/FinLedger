@@ -1,4 +1,5 @@
 node_modules
+desk/dist
 site/.next
 site/out
 **/.venv

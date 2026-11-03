@@ -2,6 +2,19 @@ from typing import List, Dict, Any
 from rag.indexer import Indexer
 from rag.isolation import build_client_namespace
 import re
+from datetime import datetime, timezone
+
+
+def _memory_recency(chunk: dict) -> float:
+    if chunk["chunk_type"] != "memory":
+        return 0.0
+    try:
+        value = datetime.fromisoformat(chunk.get("metadata", {}).get("created_at") or "")
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return value.timestamp()
+    except (TypeError, ValueError, OverflowError, OSError):
+        return 0.0
 
 class Retriever:
     def __init__(self, indexer: Indexer):
@@ -21,6 +34,10 @@ class Retriever:
         for c in chunks:
             content = c["content"].lower()
             metadata = c.get("metadata", {})
+            # Product similarity cannot override a known, conflicting supplier identity.
+            memory_gstin = str(metadata.get("gstin") or "").strip().casefold()
+            if c["chunk_type"] == "memory" and gstin.strip() and memory_gstin and memory_gstin != gstin.strip().casefold():
+                continue
             score = 0.0
             reasons = []
             def add(reason, points, matched):
@@ -47,6 +64,6 @@ class Retriever:
             ranked["ranking_reasons"] = reasons
             scored_chunks.append((score, ranked))
             
-        scored_chunks.sort(key=lambda x: (-x[0], x[1]["chunk_id"]))
+        scored_chunks.sort(key=lambda x: (-x[0], -_memory_recency(x[1]), x[1]["chunk_id"]))
         # A shared hint with nothing in common would otherwise occupy every slot.
         return [c for score, c in scored_chunks if score > 0][:top_k]

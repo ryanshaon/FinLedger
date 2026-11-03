@@ -1,11 +1,10 @@
-export type QueueKey = "new" | "needs_review" | "approved" | "exception" | "posted";
+export type QueueKey = "new" | "needs_review" | "approved" | "exception";
 
 export const QUEUES: { key: QueueKey; label: string; context: string }[] = [
   { key: "new", label: "New", context: "Bills that have arrived and are still being prepared." },
-  { key: "needs_review", label: "Needs review", context: "Bills a person needs to read before they can post." },
-  { key: "approved", label: "Approved", context: "Bills that are approved and waiting to post." },
+  { key: "needs_review", label: "Needs review", context: "Bills a person needs to read before approving them." },
+  { key: "approved", label: "Approved", context: "Bills a reviewer has approved." },
   { key: "exception", label: "Exception", context: "Bills that stopped and need a person." },
-  { key: "posted", label: "Posted", context: "Bills already posted to the books." },
 ];
 
 const QUEUE_KEYS = new Set<string>(QUEUES.map((queue) => queue.key));

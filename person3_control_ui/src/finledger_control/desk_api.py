@@ -10,13 +10,16 @@ import secrets
 from datetime import date, datetime
 from decimal import Decimal
 from uuid import UUID
+from urllib.parse import unquote
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.concurrency import run_in_threadpool
 
 from finledger_platform.browser_sessions import MIN_PASSWORD_CHARS, SessionDenied, StaffSession
-from finledger_platform.db import firm
+from finledger_platform.db import firm, tenant
+from finledger_platform import files, intake
 from finledger_platform.staff_invites import (
     InviteConflict, InviteDenied, InviteInvalid, InviteUnavailable, normalize_email,
 )
@@ -55,7 +58,8 @@ def problem(exc: Exception) -> int:
 
 
 def register_desk_api(app: FastAPI, *, pool, source_url, browser_sessions, staff_invitations,
-                      secure_browser, session_cookie_name, verify_form_csrf, user) -> None:
+                      secure_browser, session_cookie_name, verify_form_csrf, user,
+                      document_store=None, max_upload_bytes=25 * 1024 * 1024) -> None:
     def api_json(body, status: int = 200, request: Request | None = None, csrf: str | None = None):
         response = JSONResponse(jsonable(body), status_code=status, headers={"Cache-Control": "no-store"})
         if request is not None and csrf is not None:
@@ -339,9 +343,9 @@ def register_desk_api(app: FastAPI, *, pool, source_url, browser_sessions, staff
         return api_json({"clients": client_rows(who)})
 
     @app.get("/api/clients/{client_id}/queue")
-    def queue(client_id: UUID, queue: str = Query("needs_review"), who=Depends(api_user)):
+    def queue(request: Request, client_id: UUID, queue: str = Query("needs_review"), who=Depends(api_user)):
         with pool.connection() as conn:
-            desk_roles(client_id, who, conn)
+            roles = desk_roles(client_id, who, conn)
             service = ControlService(conn)
             try:
                 items = service.inbox(client_id, queue)
@@ -351,10 +355,61 @@ def register_desk_api(app: FastAPI, *, pool, source_url, browser_sessions, staff
             name = client_name(conn, client_id)
         return api_json({
             "client": {"id": client_id, "name": name},
+            "roles": sorted(roles),
+            "csrf_token": (token := csrf_value(request)),
+            "max_upload_bytes": max_upload_bytes,
             "queue": queue,
             "counts": counts,
             "items": [queue_item(row) for row in items],
-        })
+        }, request=request, csrf=token)
+
+    def accept_staff_upload(client_id, who, filename, data):
+        # Recheck membership after the upload; hold no DB connection during its stream.
+        with pool.connection() as conn:
+            roles = desk_roles(client_id, who, conn)
+            if not roles & {"ap_clerk", "firm_admin"}:
+                raise HTTPException(403, "Upload role required")
+            with tenant(conn, client_id):
+                return intake.accept(conn, document_store, client_id, "portal", [(filename, data)],
+                                     {"uploaded_by": str(who["user_id"])})
+
+    @app.post("/api/clients/{client_id}/documents")
+    async def upload_document(request: Request, client_id: UUID, who=Depends(api_user)):
+        verify_form_csrf(request, request.headers.get("x-csrf-token", ""), LOGIN_CSRF)
+        with pool.connection() as conn:
+            roles = desk_roles(client_id, who, conn)
+            if not roles & {"ap_clerk", "firm_admin"}:
+                raise HTTPException(403, "Upload role required")
+        if document_store is None:
+            raise HTTPException(503, "Document storage is not configured")
+        encoded_name = request.headers.get("x-filename", "")
+        try:
+            filename = unquote(encoded_name, encoding="utf-8", errors="strict")
+        except UnicodeDecodeError:
+            raise HTTPException(422, "Invalid filename") from None
+        if not filename.strip() or len(encoded_name) > 1200 or len(filename) > 255:
+            raise HTTPException(422, "Invalid filename")
+        length = request.headers.get("content-length")
+        if length is not None:
+            if len(length) > 20 or not length.isascii() or not length.isdecimal():
+                raise HTTPException(422, "Invalid upload size")
+            if int(length) > max_upload_bytes:
+                raise HTTPException(413, "This file exceeds the upload limit")
+        data = bytearray()
+        async for chunk in request.stream():
+            if len(data) + len(chunk) > max_upload_bytes:
+                raise HTTPException(413, "This file exceeds the upload limit")
+            data.extend(chunk)
+        if files.sniff(data) not in {files.PDF, files.JPEG, files.PNG}:
+            raise HTTPException(422, "Upload a PDF, JPG or PNG invoice")
+        try:
+            receipt = await run_in_threadpool(accept_staff_upload, client_id, who, filename, bytes(data))
+        except HTTPException:
+            raise
+        except Exception:
+            raise HTTPException(503, "The bill could not be saved. Please try again.") from None
+        return api_json({"received": receipt.received, "rejected": receipt.rejected},
+                        status=201 if receipt.received else 422)
 
     @app.get("/api/clients/{client_id}/reconciliation")
     def reconciliation(client_id: UUID, who=Depends(api_user)):
@@ -369,7 +424,8 @@ def register_desk_api(app: FastAPI, *, pool, source_url, browser_sessions, staff
         with pool.connection() as conn:
             roles = desk_roles(client_id, who, conn)
             try:
-                detail = ControlService(conn).review_detail(client_id, document_id, source_url)
+                detail = ControlService(conn).review_detail(client_id, document_id, source_url,
+                                                          actor_id=who["user_id"])
             except (NotFound, Forbidden, Conflict) as exc:
                 raise HTTPException(problem(exc), str(exc)) from None
             name = client_name(conn, client_id)

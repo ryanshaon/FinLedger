@@ -3,7 +3,7 @@ import { ApiError, api, errorMessage, needsMfa } from "@/api";
 import { LoginScreen } from "@/components/LoginScreen";
 import { Shell } from "@/components/Shell";
 import { AcceptInvite } from "@/pages/AcceptInvite";
-import { ClientsPage, ClientDetail } from "@/pages/Clients";
+import { ClientsPage } from "@/pages/Clients";
 import { Dashboard } from "@/pages/Dashboard";
 import { InvoicePage } from "@/pages/Invoice";
 import { MfaPage } from "@/pages/Mfa";
@@ -32,7 +32,7 @@ function heading(route: Route): { title: string; description: string } {
     const queue = QUEUES.find((item) => item.key === route.queue) ?? QUEUES[1];
     return { title: queue.label, description: queue.context };
   }
-  if (route.name === "invoice") return { title: "Invoice", description: "Review the bill, then post the voucher." };
+  if (route.name === "invoice") return { title: "Invoice", description: "Review the bill, then approve it." };
   if (route.name === "staff") return { title: "Staff", description: "Invite someone at the firm and choose the clients they can work on." };
   if (route.name === "mfa") return { title: "Two-step verification", description: "Enter the code from your authenticator app before you open a client." };
   if (route.name === "accept") return { title: "Set your password", description: "Choose a password, then sign in." };
@@ -116,10 +116,10 @@ export function App() {
   let body = <PageHeader title={page.title} description={page.description} />;
   if (route.name === "home") body = <Dashboard onNavigate={go} />;
   else if (route.name === "clients") body = <ClientsPage onNavigate={go} />;
-  else if (route.name === "client") body = <ClientDetail clientId={route.clientId} onNavigate={go} />;
+  else if (route.name === "client") body = <QueuePage key={`queue:${route.clientId}`} clientId={route.clientId} queue="needs_review" onNavigate={go} />;
   else if (route.name === "transactions") body = <TransactionsPage onNavigate={go} />;
-  else if (route.name === "queue") body = <QueuePage clientId={route.clientId} queue={route.queue} onNavigate={go} />;
-  else if (route.name === "invoice") body = <InvoicePage clientId={route.clientId} documentId={route.documentId} onNavigate={go} />;
+  else if (route.name === "queue") body = <QueuePage key={`queue:${route.clientId}`} clientId={route.clientId} queue={route.queue} onNavigate={go} />;
+  else if (route.name === "invoice") body = <InvoicePage key={`invoice:${route.clientId}:${route.documentId}`} clientId={route.clientId} documentId={route.documentId} onNavigate={go} />;
   else if (route.name === "staff") body = <StaffPage />;
   else if (route.name === "mfa") body = <MfaPage onVerified={() => go("/")} />;
   return (

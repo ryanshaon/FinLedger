@@ -1,4 +1,4 @@
-import { ArrowLeftRight, Bell, Building2, ChevronDown, LayoutDashboard, LogOut, Menu, Moon, PanelLeft, Search, Sun, Users } from "lucide-react";
+import { Bell, Building2, ChevronDown, LayoutDashboard, LogOut, Menu, Moon, PanelLeft, Search, Sun, Users } from "lucide-react";
 import { useEffect, useId, useState, type MouseEvent, type ReactNode } from "react";
 import { api, needsMfa } from "@/api";
 import { Button } from "@/components/ui/button";
@@ -159,7 +159,6 @@ function SidebarNav({
       <nav id="desk-menu" aria-label="Pages" className="flex flex-1 flex-col gap-1 overflow-y-auto px-3 pb-4">
         <NavItem href="/" current={route.name === "home"} collapsed={collapsed} icon={<LayoutDashboard className="size-4" />} onClick={(event) => onFollow(event, "/")}>Dashboard</NavItem>
         <NavItem href="/clients" current={route.name === "clients" || route.name === "client"} collapsed={collapsed} icon={<Building2 className="size-4" />} onClick={(event) => onFollow(event, "/clients")}>Clients</NavItem>
-        <NavItem href="/transactions" current={route.name === "transactions"} collapsed={collapsed} icon={<ArrowLeftRight className="size-4" />} onClick={(event) => onFollow(event, "/transactions")}>Transactions</NavItem>
         <p className={cn("mt-4 px-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground", collapsed && "lg:sr-only")}>Review</p>
         {clientId ? (
           <div role="group" aria-label="Review" className="flex flex-col gap-0.5">

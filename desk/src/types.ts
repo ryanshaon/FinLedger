@@ -30,6 +30,9 @@ export interface QueueResponse {
   queue: string;
   counts: Record<string, number>;
   items: QueueItem[];
+  roles?: string[];
+  csrf_token?: string;
+  max_upload_bytes?: number;
 }
 
 export interface Mark {
@@ -47,12 +50,21 @@ export interface InvoiceDetail {
   revision: number;
   source_url?: string;
   ai_paragraph?: string;
+  can_edit?: boolean;
+  can_approve?: boolean;
+  approval_note?: string;
   invoice: {
     invoice_no?: string | null;
     invoice_date?: string | null;
     buyer_gstin?: string | null;
     po_number?: string | null;
     total?: string | number | null;
+    taxable?: string | number | null;
+    cgst?: string | number | null;
+    sgst?: string | number | null;
+    igst?: string | number | null;
+    cess?: string | number | null;
+    round_off?: string | number | null;
     vendor?: { name?: string | null; gstin?: string | null };
     confidences?: Record<string, number>;
   };
@@ -104,6 +116,11 @@ export interface ReconciliationResponse {
   client: ClientRow;
   lines: BankLine[];
   bills: OpenBillMatch[];
+}
+
+export interface UploadResponse {
+  received: { document_id: string; filename: string; content_hash: string }[];
+  rejected: { filename: string; reason: string }[];
 }
 
 export interface PageContext {

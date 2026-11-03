@@ -21,7 +21,9 @@ from .web import (render_accept_invite, render_form_error, render_home, render_i
 
 
 def create_app(pool, source_url=lambda path, name: "", browser_sessions=None, staff_invitations=None,
-               local_files=None) -> FastAPI:
+               local_files=None, document_store=None, max_upload_bytes=25 * 1024 * 1024) -> FastAPI:
+    if isinstance(max_upload_bytes, bool) or not isinstance(max_upload_bytes, int) or max_upload_bytes <= 0:
+        raise ValueError("max_upload_bytes must be a positive integer")
     app=FastAPI(title="FinLedger Control & Review", version="0.1.0")
 
     @app.exception_handler(RequestValidationError)
@@ -346,6 +348,7 @@ def create_app(pool, source_url=lambda path, name: "", browser_sessions=None, st
             roles=access(client_id,who,conn)
             try: detail=ControlService(conn).review_detail(client_id,document_id,source_url)
             except (NotFound,Forbidden,Conflict) as exc: raise HTTPException(problem(exc),str(exc))
+            if not detail["revision"]: raise HTTPException(404,"review not found")
             token=secrets.token_urlsafe(32)
             response=HTMLResponse(render_review(detail,roles,token))
             response.set_cookie("finledger_csrf",token,httponly=True,secure=secure_browser(request),
@@ -381,6 +384,8 @@ def create_app(pool, source_url=lambda path, name: "", browser_sessions=None, st
         return RedirectResponse(f"/clients/{client_id}/review?queue=exception",303)
     register_desk_api(app, pool=pool, source_url=source_url, browser_sessions=browser_sessions,
                       staff_invitations=staff_invitations, secure_browser=secure_browser,
-                      session_cookie_name=session_cookie_name, verify_form_csrf=verify_form_csrf, user=user)
+                      session_cookie_name=session_cookie_name, verify_form_csrf=verify_form_csrf, user=user,
+                      document_store=document_store if document_store is not None else local_files,
+                      max_upload_bytes=max_upload_bytes)
     return app
 

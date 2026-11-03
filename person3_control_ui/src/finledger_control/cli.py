@@ -53,7 +53,8 @@ def main():
     uvicorn.run(create_app(pool,source_url=lambda path,name: store.signed_url(path,300,name),
                            browser_sessions=browser_sessions_from_env(),
                            staff_invitations=staff_invitations_from_env(),
-                           local_files=store if kind != "s3" else None),
+                           local_files=store if kind != "s3" else None, document_store=store,
+                           max_upload_bytes=int(os.environ.get("FINLEDGER_MAX_UPLOAD_BYTES", str(25 * 1024 * 1024)))),
                 host=args.host,port=args.port,proxy_headers=True,access_log=False)
 
 

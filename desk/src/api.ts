@@ -1,4 +1,4 @@
-import type { ClientRow, InvoiceResponse, QueueResponse, ReconciliationResponse, Session } from "./types";
+import type { ClientRow, InvoiceResponse, QueueResponse, ReconciliationResponse, Session, UploadResponse } from "./types";
 
 let csrfToken = "";
 
@@ -69,7 +69,32 @@ function post<T>(path: string, body: Record<string, unknown>): Promise<T> {
   return request<T>(path, { method: "POST", body: JSON.stringify({ ...body, csrf_token: csrfToken }) });
 }
 
+function isUploadBody(body: unknown): body is UploadResponse {
+  return Boolean(body) && typeof body === "object" && Array.isArray((body as { rejected?: unknown }).rejected);
+}
+
+async function upload(clientId: string, file: File): Promise<UploadResponse> {
+  try {
+    return await request<UploadResponse>(`/api/clients/${encodeURIComponent(clientId)}/documents`, {
+      method: "POST",
+      headers: {
+        "Content-Type": file.type || "application/octet-stream",
+        "X-Filename": encodeURIComponent(file.name),
+        "X-CSRF-Token": csrfToken,
+      },
+      body: file,
+    });
+  } catch (error) {
+    // A 422 can still carry the per-file reasons; a generic 422 detail is rethrown.
+    if (error instanceof ApiError && error.status === 422 && isUploadBody(error.body)) {
+      return { received: error.body.received ?? [], rejected: error.body.rejected };
+    }
+    throw error;
+  }
+}
+
 export const api = {
+  upload,
   csrf: () => request<{ csrf_token: string }>("/api/csrf"),
   session: () => request<Session>("/api/session"),
   login: (email: string, password: string) => post<{ ok: boolean }>("/api/login", { email, password }),

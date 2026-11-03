@@ -196,9 +196,8 @@ def test_correction_does_not_touch_an_unrelated_bill():
     result, prompts = _map(store, "client-a", invoice)
     ranked = {row["chunk_id"]: row for row in _ranked(store, invoice)}
 
-    assert correction["chunk_id"] in result.trace.retrieved_chunk_ids
-    assert ranked[correction["chunk_id"]]["ranking_reasons"] == []
-    assert ranked[correction["chunk_id"]]["score"] == 2
+    assert correction["chunk_id"] not in result.trace.retrieved_chunk_ids
+    assert correction["chunk_id"] not in ranked
     assert result.draft.party_ledger == WRONG
     assert result.draft.party_ledger != CORRECTED
     assert result.trace.party_ledger_from_memory is None
@@ -206,6 +205,42 @@ def test_correction_does_not_touch_an_unrelated_bill():
     assert "Required: set party_ledger" not in prompts[0]
     assert result.draft.lines[0].ledger == "Purchases"
     assert result.draft.bill_wise.ref == "INV-doc-other"
+
+
+def test_party_correction_cannot_override_a_different_known_vendor_selling_the_same_goods():
+    store = Indexer()
+    correction = _correction(store, "client-a", "doc-prev", CORRECTED)
+    invoice = _bill("doc-other-vendor", gstin=OTHER_GSTIN, name="Bharat Bearings")
+
+    result, prompts = _map(store, "client-a", invoice, party=OTHER_LEDGER)
+
+    assert result.draft.party_ledger == OTHER_LEDGER
+    assert result.trace.party_ledger_from_memory is None
+    assert correction["chunk_id"] not in result.trace.retrieved_chunk_ids
+    assert "Required: set party_ledger" not in prompts[0]
+
+
+def test_newer_equally_relevant_correction_wins_instead_of_hash_order():
+    store = Indexer()
+    newer = MemoryIndexer(store).index_correction(CorrectionEvent(
+        client_id="client-a", document_id="doc-new", vendor_gstin=GSTIN,
+        field="party_ledger", hsn_sac="8482", description="Bearings",
+        old_ledger=WRONG, new_ledger="Current creditors",
+        created_at="2026-11-02T12:00:00+00:00",
+    ))
+    older = MemoryIndexer(store).index_correction(CorrectionEvent(
+        client_id="client-a", document_id="doc-old", vendor_gstin=GSTIN,
+        field="party_ledger", hsn_sac="8482", description="Bearings",
+        old_ledger=WRONG, new_ledger="Superseded creditors",
+        created_at="2026-11-01T12:00:00+00:00",
+    ))
+    # Force the old record first so neither insertion order nor a hash is recency.
+    store.get_namespace_chunks("client-a").reverse()
+    result, _ = _map(store, "client-a", _bill("doc-after-corrections"))
+
+    assert result.draft.party_ledger == "Current creditors"
+    assert result.trace.party_ledger_chunk_id == newer["chunk_id"]
+    assert result.trace.party_ledger_chunk_id != older["chunk_id"]
 
 
 def test_party_ledger_override_is_isolated_by_client():

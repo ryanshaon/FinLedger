@@ -117,6 +117,19 @@ def test_empty_history_returns_no_chunks():
     assert rows == []
 
 
+def test_foreign_vendor_memories_cannot_crowd_out_a_known_vendor_match():
+    indexer = Indexer()
+    indexer.upsert("client-a", "vendor:current", ChunkType.VENDOR, GSTIN, {"gstin": GSTIN})
+    for i in range(10):
+        indexer.upsert("client-a", f"memory:other:{i}", ChunkType.MEMORY,
+                       "bearings spindle assembly mechanism HSN 8482",
+                       {"gstin": "24BBBBB0000B1Z8", "hsn": "8482"})
+    rows = Retriever(indexer).retrieve(
+        "client-a", GSTIN, "", ["bearings spindle assembly mechanism"], "8482", "", "", top_k=1,
+    )
+    assert [row["chunk_id"] for row in rows] == ["vendor:current"]
+
+
 def test_missing_gstin_drops_gstin_only_chunks():
     indexer = Indexer()
     indexer.upsert("client-a", "gstin-only", ChunkType.VENDOR, GSTIN, {"gstin": GSTIN})

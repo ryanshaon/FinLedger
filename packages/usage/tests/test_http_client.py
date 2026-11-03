@@ -248,7 +248,8 @@ def test_refused_connection_is_transport_unavailable(loopback_only):
     sock.bind(("127.0.0.1", 0))
     port = sock.getsockname()[1]
     sock.close()
-    client = _client(port, timeout_seconds=1)
+    # Windows needs about two seconds to report refusal; one second tests a timeout instead.
+    client = _client(port, timeout_seconds=3)
     with pytest.raises(TransportError) as exc:
         _exchange(client)
     assert exc.value.code == "transport_unavailable"

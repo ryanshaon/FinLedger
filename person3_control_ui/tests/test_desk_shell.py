@@ -105,9 +105,11 @@ def test_desk_copy_and_queue_order():
     assert (ROOT / "desk" / "public" / "finledger-mark.png").is_file()
     assert "finledger-theme" in theme
     assert "Control plane" not in src
-    labels = ['label: "New"', 'label: "Needs review"', 'label: "Approved"', 'label: "Exception"', 'label: "Posted"']
+    labels = ['label: "New"', 'label: "Needs review"', 'label: "Approved"', 'label: "Exception"']
     positions = [router.index(label) for label in labels]
     assert positions == sorted(positions)
+    assert 'label: "Posted"' not in router
+    assert 'href="/transactions"' not in src
     for color in ("#0b3a66", "#1d4e89", "#0e1216", "#8fb4d9", "#1e3a5f"):
         assert color in css
     package = json.loads((ROOT / "desk" / "package.json").read_text(encoding="utf-8"))

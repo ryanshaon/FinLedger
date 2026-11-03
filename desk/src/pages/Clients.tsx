@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { errorMessage } from "@/api";
 import { Badge, statusTone } from "@/components/ui/badge";
-import { asAmount, formatDay, rupees } from "@/format";
+import { formatDay, rupees } from "@/format";
 import { loadClientBills, loadFirm, type LiveBill } from "@/live";
 import { PageHeader } from "@/pages/Placeholder";
 import { bodyCell, EmptyState, headCell, TableScroll, TableSkeleton } from "@/pages/states";
@@ -43,15 +43,12 @@ export function ClientsPage({ onNavigate }: { onNavigate: (url: string) => void 
               <th className={headCell}>GSTIN</th>
               <th className={`${headCell} text-right`}>Open bills</th>
               <th className={`${headCell} text-right`}>Needs review</th>
-              <th className={`${headCell} text-right`}>Outstanding</th>
             </tr>
           </thead>
           <tbody>
             {clients.map((client) => {
               const rows = bills.filter((bill) => bill.clientId === client.id);
-              const open = rows.filter((bill) => bill.queue !== "posted");
               const review = rows.filter((bill) => bill.queue === "needs_review" || bill.queue === "new");
-              const outstanding = open.reduce((sum, bill) => sum + asAmount(bill.total), 0);
               const href = `/clients/${client.id}`;
               return (
                 <tr key={client.id} className="border-b border-border last:border-0 hover:bg-muted/70">
@@ -61,9 +58,8 @@ export function ClientsPage({ onNavigate }: { onNavigate: (url: string) => void 
                     </a>
                   </td>
                   <td className={`${bodyCell} tabular-nums text-muted-foreground`}>{client.gstin || "—"}</td>
-                  <td className={`${bodyCell} text-right tabular-nums`}>{open.length}</td>
+                  <td className={`${bodyCell} text-right tabular-nums`}>{rows.length}</td>
                   <td className={`${bodyCell} text-right tabular-nums`}>{review.length}</td>
-                  <td className={`${bodyCell} text-right tabular-nums`}>{rupees(outstanding)}</td>
                 </tr>
               );
             })}
@@ -111,7 +107,7 @@ export function ClientDetail({ clientId, onNavigate }: { clientId: string; onNav
     );
   }
 
-  const open = (rows || []).filter((bill) => bill.queue !== "posted");
+  const open = rows || [];
   return (
     <div className="space-y-4">
       <PageHeader

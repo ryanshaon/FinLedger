@@ -99,7 +99,7 @@ def index_client_corpus(conn, client_id) -> None:
         indexer.upsert(client, f"vendor:{gstin}", ChunkType.VENDOR, content, metadata)
     memory = MemoryIndexer(indexer)
     rows = conn.execute(
-        """select client_id, document_id, vendor_gstin, field, old_value, new_value, hsn, description, actor_id
+        """select client_id, document_id, vendor_gstin, field, old_value, new_value, hsn, description, actor_id, created_at
            from correction_events order by id"""
     ).fetchall()
     for row in rows:
@@ -113,6 +113,7 @@ def index_client_corpus(conn, client_id) -> None:
             old_ledger=_text(row["old_value"]),
             new_ledger=_text(row["new_value"]),
             actor_id=str(row["actor_id"]) if row["actor_id"] else None,
+            created_at=row["created_at"].isoformat(),
         ))
     posted = conn.execute(
         """select document_id, erp_id from posting_attempts
