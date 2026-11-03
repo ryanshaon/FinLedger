@@ -108,6 +108,10 @@ npm --prefix desk run test:browser
 [PR #54](https://github.com/ryanshaon/FinLedger/pull/54) records final-head CI and integration. Initial implementation
 `3acce09` passed all three CI jobs; require the updated head to pass again before merge. No hosted changes.
 
+The first follow-up CI run passed Docker but caught a browser assertion racing React's route-change effect:
+the URL had changed while the search input still briefly held its old value. The regression now waits for the
+actual input to clear before asserting; no fixed delay or weaker assertion was added. Final CI must pass again.
+
 ## Rollback
 
 Revert the pull request. No migration or hosted configuration changed.

@@ -249,16 +249,19 @@ test("header search finds only assigned companies by name or GSTIN, opens them a
   assert.equal(await results.getByRole("link").count(), 1);
   await search.press("Enter");
   await page.waitForURL(`**/clients/${CLIENT_B}`);
+  await page.waitForFunction(el => el.value === "", await search.elementHandle());
   assert.equal(await search.inputValue(), "");
   await search.fill("27aaaca");
   await results.getByRole("link", { name: /Alpha Steel/ }).click();
   await page.waitForURL(`**/clients/${CLIENT_A}`);
+  await page.waitForFunction(el => el.value === "", await search.elementHandle());
   assert.equal(await search.inputValue(), "");
   await search.fill("no such company");
   await page.getByText("No assigned company matches", { exact: false }).first().waitFor();
   await search.press("Enter");
   assert.equal(new URL(page.url()).pathname, `/clients/${CLIENT_A}`);
   await search.press("Escape");
+  await page.waitForFunction(el => el.value === "", await search.elementHandle());
   assert.equal(await search.inputValue(), "");
 });
 

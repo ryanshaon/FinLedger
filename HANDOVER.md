@@ -285,6 +285,8 @@ head's CI and integration state; merge only with green checks on that exact head
   deterministic provider and EICAR stub. Docker is absent locally; initial image build passed in CI.
 - **Visual checks:** light/dark dashboard and invoice rendered and inspected. Main text pairs measure
   5.60–11.59:1 contrast; keyboard skip/search and 390px layouts tested. Screen readers were not tested.
+- **Browser CI lesson:** URL changes precede React effect completion. Search-clear regressions wait for the
+  input's actual empty value, not just the new URL; the first follow-up CI exposed this race.
 - **Hosted changes:** none. No SQL/migrations, Supabase/Auth/storage settings, credentials, model calls,
   email or deployment changes. Person 4 is untouched; exactly three assignment files remain.
 
