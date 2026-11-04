@@ -260,6 +260,14 @@ every completed or WIP change. No uncommitted implementation may remain on the P
 
 ## Latest status
 
+**2026-11-05 — map role created, login disabled:** Applied the committed operator-only
+`recovery/provision_fl_map.sql` to `smnfnnwmasnsuuwrboge` after PR #59 passed CI and merged.
+Verified `fl_map` cannot log in, is not superuser, cannot bypass RLS or create roles/databases,
+and is a member of `finledger_app` and `finledger_worker_map`. It has no configured password.
+Owner must set a new password privately via psql `\password fl_map`; only afterward run the
+committed `recovery/enable_fl_map.sql`, then verify the non-owner session-pooler connection and
+application RAG flow. Do not reapply the provisioning SQL. No customer data changed.
+
 **2026-11-05 — restricted map-worker login preparation:** `setup/rag-runtime-login` adds
 operator-only SQL to create `fl_map` without login, granting only `finledger_app` and
 `finledger_worker_map`, plus a separate enable step after the owner sets a password privately.
