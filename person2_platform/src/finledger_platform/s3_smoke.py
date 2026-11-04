@@ -8,6 +8,7 @@ confirms an unsigned public URL is refused (bucket really is private), then dele
 from __future__ import annotations
 
 import secrets
+import json
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
@@ -22,7 +23,21 @@ def _http_get(url: str) -> tuple[int, bytes]:
         with urllib.request.urlopen(url, timeout=20) as r:
             return r.status, r.read()
     except urllib.error.HTTPError as e:
-        return e.code, b""
+        return e.code, e.read(4096)
+
+
+def _public_refused(status: int, body: bytes) -> bool:
+    if status in (401, 403, 404):
+        return True
+    if status != 400:
+        return False
+    try:
+        return json.loads(body) == {
+            "statusCode": "404", "error": "Bucket not found",
+            "message": "Bucket not found", "code": "NoSuchBucket",
+        }
+    except (ValueError, UnicodeDecodeError):
+        return False
 
 
 def run(store: S3Store, endpoint_url: str = "") -> Report:
@@ -37,14 +52,15 @@ def run(store: S3Store, endpoint_url: str = "") -> Report:
         rep.check(store.get(key) == body, "get object returns identical bytes")
         phase = "presigned GET"
         status, data = _http_get(store.signed_url(key, ttl=60, filename="smoke.txt"))
-        rep.check(status == 200 and data == body, "presigned GET returns the object")
+        signed_ok = status == 200 and data == body
+        rep.check(signed_ok, "presigned GET returns the object")
         if endpoint_url:
             # Supabase serves public buckets at /storage/v1/object/public/<bucket>/<key>; a private one must refuse.
             base = endpoint_url.rstrip("/").removesuffix("/s3")
             phase = "unsigned public GET"
-            status, _ = _http_get(f"{base}/object/public/{store.bucket}/{key}")
+            status, error_body = _http_get(f"{base}/object/public/{store.bucket}/{key}")
             # Throttling, bad requests and service failures are not evidence of bucket privacy.
-            rep.check(status in (401, 403, 404), f"unsigned public URL refused (HTTP {status})")
+            rep.check(signed_ok and _public_refused(status, error_body), f"unsigned public URL refused (HTTP {status})")
     except Exception:
         # Upstream exceptions can include presigned URLs/credentials. Always return a safe report,
         # including cleanup, rather than letting the CLI print their traceback.

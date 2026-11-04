@@ -42,6 +42,29 @@ def test_service_errors_are_not_proof_of_public_access_denial(smoke_store, monke
     assert smoke_store.s3.list_objects_v2(Bucket=smoke_store.bucket)["KeyCount"] == 0
 
 
+@pytest.mark.parametrize("body,expected", [
+    (b'{"statusCode":"404","error":"Bucket not found","message":"Bucket not found","code":"NoSuchBucket"}', True),
+    (b'{"statusCode":"404","code":"Other"}', False),
+    (b'{"statusCode":"500","code":"NoSuchBucket"}', False),
+    (b'not json', False),
+])
+def test_supabase_400_denial_requires_specific_error(smoke_store, monkeypatch, body, expected):
+    original = s3_smoke._http_get
+    monkeypatch.setattr(s3_smoke, "_http_get",
+                        lambda url: original(url) if "X-Amz-Signature" in url else (400, body))
+    report = s3_smoke.run(smoke_store, ENDPOINT)
+    assert report.ok is expected
+    assert smoke_store.s3.list_objects_v2(Bucket=smoke_store.bucket)["KeyCount"] == 0
+
+
+def test_public_denial_cannot_pass_without_signed_positive_control(smoke_store, monkeypatch):
+    body = b'{"statusCode":"404","error":"Bucket not found","message":"Bucket not found","code":"NoSuchBucket"}'
+    monkeypatch.setattr(s3_smoke, "_http_get", lambda url: (500, b"") if "X-Amz-Signature" in url else (400, body))
+    report = s3_smoke.run(smoke_store, ENDPOINT)
+    assert not report.ok
+    assert any("unsigned public" in label for label in report.failed)
+
+
 @pytest.mark.parametrize("stage", ["put", "get", "signed_url", "presigned_get", "public_get"])
 def test_smoke_step_failure_returns_safe_report_and_cleanup(smoke_store, monkeypatch, capsys, stage):
     def fail(*args, **kwargs):

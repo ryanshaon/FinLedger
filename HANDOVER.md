@@ -260,6 +260,14 @@ every completed or WIP change. No uncommitted implementation may remain on the P
 
 ## Latest status
 
+**2026-11-05 — Supabase S3 smoke check:** User configured private S3 credentials locally. On branch
+`fix/supabase-storage-denial`, the smoke test recognizes only the observed Supabase HTTP 400
+`NoSuchBucket` response after a successful signed download; unrelated errors remain failures.
+Focused tests: **16 passed**. Live synthetic upload, authenticated read, presigned download,
+unsigned public denial and deletion all passed on `smnfnnwmasnsuuwrboge`. No SQL, provider
+calls, customer data or Person 4 changes. The bucket was previously confirmed private and empty.
+Database runtime login and hosted RAG proof remain outstanding.
+
 **2026-11-04 approval replay authorization:** branch `fix/approval-replay-authorization` fixes an
 approved-bill replay path that previously allowed a payer to request a posting job without approver
 permission. The regression failed before the fix; the full local control suite passed **114 tests**
