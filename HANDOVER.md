@@ -260,6 +260,13 @@ every completed or WIP change. No uncommitted implementation may remain on the P
 
 ## Latest status
 
+**2026-11-05 — map login enabled:** Owner privately set the `fl_map` password. Verified only
+that a SCRAM password exists (no password or hash read/displayed), then applied the committed
+`recovery/enable_fl_map.sql` on `smnfnnwmasnsuuwrboge`. Verified login enabled, no superuser,
+RLS bypass, role creation or database creation, and membership in `finledger_app` and
+`finledger_worker_map`. Actual map-role session-pooler authentication and app RAG flow are
+still untested; owner must supply its private connection URI. No customer data changed.
+
 **2026-11-05 — map role created, login disabled:** Applied the committed operator-only
 `recovery/provision_fl_map.sql` to `smnfnnwmasnsuuwrboge` after PR #59 passed CI and merged.
 Verified `fl_map` cannot log in, is not superuser, cannot bypass RLS or create roles/databases,
