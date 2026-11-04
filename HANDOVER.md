@@ -260,6 +260,12 @@ every completed or WIP change. No uncommitted implementation may remain on the P
 
 ## Latest status
 
+**2026-11-05 — RAG proof in progress:** `test/hosted-rag-isolation` adds a rollback-only,
+eight-assertion RAG tenant-isolation proof and one PostgreSQL test that checks both a secure
+schema and a deliberately disabled RLS policy. Local test: **1 passed**. Hosted execution,
+secure runtime login and end-to-end RAG remain pending. Synthetic proof rolls back rows and
+role grants but can advance database sequences; it is not a schema migration.
+
 **2026-11-05 — Supabase S3 smoke check:** User configured private S3 credentials locally. On branch
 `fix/supabase-storage-denial`, the smoke test recognizes only the observed Supabase HTTP 400
 `NoSuchBucket` response after a successful signed download; unrelated errors remain failures.
