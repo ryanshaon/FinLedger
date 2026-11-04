@@ -260,6 +260,12 @@ every completed or WIP change. No uncommitted implementation may remain on the P
 
 ## Latest status
 
+**2026-11-05 — restricted map-worker login preparation:** `setup/rag-runtime-login` adds
+operator-only SQL to create `fl_map` without login, granting only `finledger_app` and
+`finledger_worker_map`, plus a separate enable step after the owner sets a password privately.
+One isolated PostgreSQL test passed. Hosted provisioning and private password setup are pending.
+These operator scripts are not app migrations and contain no credentials.
+
 **2026-11-05 — hosted RAG isolation proof passed:** Executed the committed
 `recovery/verify_rag_isolation.sql` through the replacement project's owner session pooler.
 All **8/8** assertions passed, including cross-client read/write/delete and upsert checks;
