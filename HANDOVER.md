@@ -260,6 +260,13 @@ every completed or WIP change. No uncommitted implementation may remain on the P
 
 ## Latest status
 
+**2026-11-05 — hosted RAG isolation proof passed:** Executed the committed
+`recovery/verify_rag_isolation.sql` through the replacement project's owner session pooler.
+All **8/8** assertions passed, including cross-client read/write/delete and upsert checks;
+synthetic firm and temporary role removal were confirmed. Sequence values may have advanced.
+No persistent schema or real customer data changed. This verifies SQL isolation, not the
+application's hosted end-to-end retrieval. Restricted runtime logins are still not created.
+
 **2026-11-05 — RAG proof in progress:** `test/hosted-rag-isolation` adds a rollback-only,
 eight-assertion RAG tenant-isolation proof and one PostgreSQL test that checks both a secure
 schema and a deliberately disabled RLS policy. Local test: **1 passed**. Hosted execution,
