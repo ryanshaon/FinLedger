@@ -35,6 +35,8 @@ class Action(str, Enum):
     REJECT = "reject"
     ASK_RESUBMIT = "ask_resubmit"
     ERP_FAILED = "erp_failed"
+    RETURN_TO_REVIEW = "return_to_review"
+    RECONCILE_POSTED = "reconcile_posted"
 
 
 class Route(str, Enum):
@@ -97,6 +99,16 @@ def transition(current: str, action: Action, ctx: TransitionContext) -> str:
         if ctx.actor_id == ctx.approved_by:
             raise InvalidTransition("separation of duties: approver cannot release payment")
         return "paid"
+    if action == Action.RETURN_TO_REVIEW:
+        if current != "exception":
+            raise InvalidTransition(f"cannot {action.value} from {current}")
+        if not ({Role.APPROVER, Role.FIRM_ADMIN} & ctx.actor_roles):
+            raise InvalidTransition("approver role required")
+        return "in_review"
+    if action == Action.RECONCILE_POSTED:
+        if current not in {"approved", "exception"}:
+            raise InvalidTransition(f"cannot {action.value} from {current}")
+        return "posted"
     if action == Action.ERP_FAILED:
         if current not in {"approved", "scheduled", "paid"}:
             raise InvalidTransition(f"ERP failure invalid from {current}")

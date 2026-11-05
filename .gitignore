@@ -46,3 +46,6 @@ site/.next/
 site/out/
 *.tsbuildinfo
 
+
+# Local tools and downloads
+.local/

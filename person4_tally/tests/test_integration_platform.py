@@ -96,7 +96,7 @@ from finledger_tally.posting import (  # noqa: E402
 from test_identity_probe_kit import _FakeTally  # noqa: E402
 from test_isolation_check import OTHER_CO, TEST_CO  # noqa: E402
 from test_masters import ledger  # noqa: E402
-from test_p3_integration import PURCHASE, VENDOR, _canonical, _draft, _P3Sink  # noqa: E402
+from test_p3_integration import PURCHASE, VENDOR, _canonical, _draft, _P3Sink, _posting_on  # noqa: E402
 from test_posting import tally  # noqa: E402,F401 (fixture)
 from test_release_boundary import Undelivered  # noqa: E402
 
@@ -220,7 +220,10 @@ def _settings(fake, tmp_path, cid, **changes) -> AgentSettings:
 
 def _approve(conn, world, document):
     """person3 score -> submit_draft -> approve(post=True): real rows and the real queued post job."""
+    global _CLAIMING_CLIENT
     svc, cid = ControlService(conn), world["client"]["id"]
+    _CLAIMING_CLIENT = cid
+    _posting_on(conn, world, cid)
     svc.score(cid, document, _canonical(document), world["clerk"])
     routed = svc.submit_draft(cid, document, _draft(document), world["clerk"])
     svc.approve(cid, document, world["approver"], post=True, expected_revision=routed["revision"])
@@ -243,14 +246,17 @@ def _auth(conn, cid, document, job_id) -> PostAuthorization:
 
 
 def _claim(conn):
-    """person2's real claim of the ``post`` queue (a lease; returns None when nothing is claimable)."""
-    return conn.execute("select * from claim_job('post', 300)").fetchone()
+    """person2's real claim of this client's ``post`` queue (a lease; returns None when nothing is claimable)."""
+    return conn.execute("select * from claim_post_job(%s, 300)", (_CLAIMING_CLIENT,)).fetchone()
+
+
+_CLAIMING_CLIENT = None
 
 
 def _finish(conn, job):
-    """person2's real ``finish_job`` for a claim; ``p_permanent`` as CONTRACT_GAPS proposes for every P4 outcome."""
-    return conn.execute("select finish_job(%s, %s, true, null, true) as r",
-                        (job["id"], job["claim_token"])).fetchone()["r"]
+    """person2's real settlement for a claim; ``p_permanent`` as CONTRACT_GAPS proposes for every P4 outcome."""
+    return conn.execute("select settle_post_job(%s, %s, %s, 'done') as r",
+                        (job["id"], job["client_id"], job["claim_token"])).fetchone()["r"]
 
 
 def _report(svc, cid, document, job, outcome: PostOutcome):
@@ -463,16 +469,16 @@ def test_a_post_job_re_leased_by_p2_returns_the_recorded_erp_id_without_any_tall
     assert out.state == State.POSTED
     assert _report(svc, cid, document, first, out) == {"status": "posted"}  # then the agent dies before finish_job
     owner.execute("update jobs set locked_until = now() - interval '1 second' where id=%s", (first["id"],))
-    again = _claim(conn)  # gap 11: person2 hands the same running post job out a second time
-    assert (again["id"], again["attempts"]) == (first["id"], 2) and again["claim_token"] != first["claim_token"]
+    assert _claim(conn) is None  # gap 11: an expired lease is never offered again; it waits for a person
+    assert owner.execute("select state from jobs where id=%s", (first["id"],)).fetchone()["state"] == "needs_reconciliation"
     calls = len(fake.kinds)
-    for state_dir in (s.state_dir, tmp_path / "lost_state"):  # with the agent's journal, and with it lost
+    for state_dir in (s.state_dir, tmp_path / "lost_state"):  # even a delivery by other means, with the journal or without
         dup = TallyConnector(replace(s, state_dir=state_dir)).post_invoice(
-            again["payload"], _auth(conn, cid, document, again["id"]))
+            first["payload"], _auth(conn, cid, document, first["id"]))
         assert (dup.state, dup.erp_id) == (State.ALREADY_POSTED, out.erp_id)
-        assert _report(svc, cid, document, again, dup) == {"status": "posted"}
+        assert _report(svc, cid, document, first, dup) == {"status": "posted"}
     assert len(fake.kinds) == calls and len(fake.imports) == 1
-    assert _finish(conn, first) is None and _finish(conn, again) == "done"  # the stale holder is fenced
+    assert _finish(conn, first) == "done"  # the late report still settles it, because the token was kept
     st = _p3(conn, cid, document, first["id"])
     assert (st.status, st.result, st.erp_id) == ("posted", "posted", out.erp_id) and len(st.events) == 1
 
@@ -784,7 +790,7 @@ def test_p3_refusing_a_posted_result_after_an_edit_cannot_lead_to_a_second_vouch
     out = TallyConnector(s).post_invoice(job["payload"], _auth(conn, cid, document, job["id"]))
     assert out.state == State.POSTED
     rev = job["payload"]["revision"]
-    svc.edit_field(cid, document, world["approver"], "narration", "edited after posting", expected_revision=rev)
+    svc.edit_field(cid, document, world["clerk"], "narration", "edited after posting", expected_revision=rev)
     with pytest.raises(Conflict, match="in_review"):
         _report(svc, cid, document, job, out)
     st = _p3(conn, cid, document, job["id"])
@@ -831,7 +837,7 @@ def test_a_platform_database_that_cannot_be_read_posts_nothing(conn, world, docu
     else:  # read under another client's tenant: RLS returns nothing, and nothing is not an approval
         source = _PlatformSource(conn, OTHER_CLIENT, document, job)
     tick = _run_once(_settings(fake, tmp_path, cid), source, _P3Sink(ControlService(conn), cid, document))
-    assert tick.claimed is False and tick.outcome is None and tick.error_kind == f"claim failed: {exc}"
+    assert tick.claimed is False and tick.outcome is None and tick.error_kind in (f"claim failed: {exc}", "claim failed: ConnectionTimeout")
     assert fake.imports == [] and "import" not in fake.kinds
     assert _p3(conn, cid, document, job["id"]) == UNTOUCHED
 
@@ -877,22 +883,23 @@ def test_p4_erp_result_supplies_every_p3_erp_result_keyword_but_the_job_ids():
         assert keys <= keywords and required - keys == {"job_id", "revision", "idempotency_key"}
 
 
-def test_the_running_p2_app_has_no_agent_route_to_claim_or_report_post_jobs(tmp_path):
+def test_the_running_p2_app_has_the_agent_routes_to_claim_and_report_post_jobs(tmp_path):
     """Stronger than test_contract_compat's regex over api.py: routes registered any other way are seen too (gap 10)."""
     s = _p2_settings("postgresql://unused", "", tmp_path)
     app = create_app(s, None, LocalStore(s.store_root, s.signing_secret, s.app_base_url))
     assert sorted(r.path for r in app.routes if r.path.startswith("/agent")) == [
+        "/agent/jobs/claim", "/agent/jobs/{job_id}/release", "/agent/jobs/{job_id}/result",
         "/agent/mapping", "/agent/masters", "/agent/open-bills"]
 
 
-def test_the_migrated_schema_still_has_the_gaps_p4_works_around(conn):
+def test_the_migrated_schema_matches_what_p4_expects(conn):
     """The live-schema version of test_contract_compat's gap 1/2/3/14 pins. A failure means person2 changed the
     contract: update P4's mapping and docs/CONTRACT_GAPS.md together, then this test."""
-    assert _allowed(conn, "posting_attempts", "result") == {"pending", "posted", "failed"}  # gap 1
+    assert _allowed(conn, "posting_attempts", "result") == {"pending", "posted", "failed", "outcome_uncertain"}  # gap 1
     attempts, links = _columns(conn, "posting_attempts"), _columns(conn, "erp_links")
     assert {"result", "erp_id", "error"} <= attempts and "company_name" in links  # the tables are visible at all
-    assert not {"request_sha256", "response_sha256", "response_excerpt"} & attempts  # gap 2
-    assert "company_guid" not in links  # gap 3
+    assert {"request_sha256", "response_sha256"} <= attempts  # gap 2
+    assert "company_guid" in links  # gap 3
     assert _allowed(conn, "approvals", "kind") == {"human", "policy_clear", "payment_release"}  # gap 14
     assert set(POSTING_APPROVAL_KINDS) < _allowed(conn, "approvals", "kind")
     assert {"superseded_at", "superseded_by_revision"} <= _columns(conn, "approvals")

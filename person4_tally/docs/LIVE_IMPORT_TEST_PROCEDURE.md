@@ -1,11 +1,10 @@
 # Person 4: controlled live Import test (procedure only, NOT executed)
 
-> **This procedure has not been run, and nothing in this repository runs it.** The checks are code
-> (`finledger_tally.preflight`) and the read-only part is a CLI command (`python -m finledger_tally preflight`), but
-> there is **no** CLI command, script or flag that sends the Import. The one send is a deliberate Python call
-> (`execute_live_import`) that refuses unless every check passes again and the person types the exact confirmation
-> phrase. Running it needs Harshith's explicit, separate authorization at the time, a person at the Tally PC, and the
-> stop rules below. Until then the Import reply (contract gap 17) stays unverified.
+> **This procedure has not been run.** The checks are code (`finledger_tally.preflight`). In Phase 1 the job comes from a
+> real approval on the desk, and `python -m finledger_tally run-once` is the one command that can send the Import: it calls
+> `execute_live_import`, which refuses unless every check passes again and the person types the exact confirmation
+> phrase. Running it needs Harshith's explicit, separate authorization that day, naming the bill and the request hash, a
+> person at the Tally PC, and the stop rules below. Until then the Import reply (contract gap 17) stays unverified.
 
 ## 1. Why one live Import is needed
 

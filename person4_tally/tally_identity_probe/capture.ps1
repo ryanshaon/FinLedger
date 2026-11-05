@@ -14,6 +14,7 @@ param(
   [string]$OutDir = $PSScriptRoot
 )
 $ErrorActionPreference = 'Stop'
+if (-not $OutDir) { $OutDir = $PSScriptRoot }  # Windows PowerShell 5.1 leaves $PSScriptRoot empty in a parameter default
 
 function Assert-Date([string]$name, [string]$value) {
   try { return [datetime]::ParseExact($value, 'yyyyMMdd', [System.Globalization.CultureInfo]::InvariantCulture) }

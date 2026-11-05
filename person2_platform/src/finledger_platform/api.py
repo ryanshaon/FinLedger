@@ -5,7 +5,8 @@ Public doors      GET/POST /i/{token}             unique upload link (vendors)
                   GET      /files/{signed}         signed downloads (local store only)
 Staff (Bearer)    /clients...                      workspace, policy, doors, documents list, signed raw URL, CSV,
                                            retrieval CSV (ledgers, vendors, posted history)
-Agent (Bearer)    /agent/...                       Person 4 site agent: masters snapshot, open bills, mapping
+Agent (Bearer)    /agent/...                       Person 4 site agent: masters snapshot, open bills, mapping,
+                                           claim a post job, report or release it
 """
 from __future__ import annotations
 
@@ -59,6 +60,29 @@ class MemberIn(BaseModel):
 class PairIn(BaseModel):
     erp_type: Literal["tally", "zoho", "qbo", "sap", "oracle"] = "tally"
     company_name: str | None = None
+
+
+class AgentClaimIn(BaseModel):
+    lease_seconds: int = Field(default=300, ge=5, le=3600)
+
+
+_SHA256 = r"^[0-9a-f]{64}$"
+
+
+class AgentResultIn(BaseModel):
+    claim_token: UUID
+    revision: int = Field(ge=1)
+    idempotency_key: str = Field(min_length=1, max_length=200)
+    outcome: Literal["posted", "failed", "uncertain"]
+    erp_id: str | None = Field(default=None, max_length=200)
+    error: str | None = Field(default=None, max_length=2000)
+    request_sha256: str | None = Field(default=None, pattern=_SHA256)
+    response_sha256: str | None = Field(default=None, pattern=_SHA256)
+
+
+class AgentReleaseIn(BaseModel):
+    claim_token: UUID
+    reason: Literal["tally_unavailable", "send_not_delivered", "company_unverified", "not_confirmed"]
 
 
 class MastersIn(BaseModel):
@@ -463,6 +487,80 @@ def create_app(settings: Settings, pool, store) -> FastAPI:
         if cid is None:
             raise HTTPException(401, "invalid agent token")
         return cid
+
+    @app.post("/agent/jobs/claim")
+    def agent_claim(body: AgentClaimIn, client_id: UUID = Depends(agent_dep),
+                    conn: psycopg.Connection = Depends(conn_dep)):
+        """This client's next post job, only while its posting switch is on. The client comes from the token only."""
+        job = conn.execute("select * from claim_post_job(%s, %s)", (client_id, body.lease_seconds)).fetchone()
+        if not job:
+            return Response(status_code=204)
+        with tenant(conn, client_id):
+            document = conn.execute("select id, client_id, status from documents where id = %s",
+                                    (job["document_id"],)).fetchone()
+            attempt = conn.execute(
+                """select client_id, document_id, result, revision, idempotency_key, request_hash, erp_id
+                   from posting_attempts where job_id = %s""", (job["id"],)).fetchone()
+            approvals = conn.execute(
+                "select client_id, document_id, kind, revision, superseded_at from approvals where document_id = %s",
+                (job["document_id"],)).fetchall()
+            company = conn.execute("select company_name as name, company_guid as guid from erp_links where client_id = %s",
+                                   (client_id,)).fetchone()
+            invoice = conn.execute("select payload from canonical_invoices where document_id = %s",
+                                   (job["document_id"],)).fetchone()["payload"]
+        return {"job_id": job["id"], "claim_token": job["claim_token"], "lease_expires_at": job["locked_until"],
+                "payload": job["payload"], "document": document, "attempt": attempt, "approvals": approvals,
+                "company": company,
+                "invoice": {key: invoice.get(key) for key in ("total", "cgst", "sgst", "igst", "cess")}}
+
+    @app.post("/agent/jobs/{job_id}/result")
+    def agent_result(job_id: int, body: AgentResultIn, client_id: UUID = Depends(agent_dep),
+                     conn: psycopg.Connection = Depends(conn_dep)):
+        """Records one outcome. An identical repeat returns the same answer; a conflicting one is recorded and refused."""
+        if body.outcome == "posted" and not body.erp_id:
+            raise HTTPException(422, "a posted result needs an erp_id")
+        from finledger_control.service import Conflict, ControlService, NotFound  # person3, as score_worker does
+
+        with tenant(conn, client_id):
+            job = conn.execute("select id, document_id, state, claim_token from jobs where id = %s and queue = 'post'",
+                               (job_id,)).fetchone()
+        if not job:
+            raise HTTPException(404, "job not found")
+        if job["claim_token"] is not None and job["claim_token"] != body.claim_token:
+            raise HTTPException(409, "this claim is no longer valid")
+        service = ControlService(conn)
+        try:
+            result = service.erp_result(client_id, job["document_id"], ok=body.outcome == "posted", job_id=job_id,
+                                        revision=body.revision, idempotency_key=body.idempotency_key,
+                                        erp_id=body.erp_id, error=body.error, uncertain=body.outcome == "uncertain",
+                                        request_sha256=body.request_sha256, response_sha256=body.response_sha256)
+        except NotFound:
+            raise HTTPException(404, "job not found") from None
+        except Conflict as exc:
+            raise HTTPException(409, str(exc)) from None
+        if result.get("conflict"):
+            raise HTTPException(409, "a different result is already recorded for this job")
+        if job["claim_token"] is not None:
+            target = {"posted": "done", "failed": "dead", "uncertain": "needs_reconciliation"}[body.outcome]
+            conn.execute("select settle_post_job(%s, %s, %s, %s)", (job_id, client_id, body.claim_token, target))
+        with tenant(conn, client_id):
+            state = conn.execute("select state from jobs where id = %s", (job_id,)).fetchone()["state"]
+            attempt = conn.execute("select result from posting_attempts where job_id = %s", (job_id,)).fetchone()["result"]
+        return {"document_status": result["status"], "attempt_result": attempt, "job_state": state}
+
+    @app.post("/agent/jobs/{job_id}/release")
+    def agent_release(job_id: int, body: AgentReleaseIn, client_id: UUID = Depends(agent_dep),
+                      conn: psycopg.Connection = Depends(conn_dep)):
+        """Hands back a job from which nothing was sent. The agent checks its journal first; the server cannot."""
+        with tenant(conn, client_id):
+            row = conn.execute(
+                """update jobs set state = 'queued', claim_token = null, locked_until = null, updated_at = now(),
+                          run_after = now() + interval '60 seconds', last_error = %s
+                   where id = %s and queue = 'post' and state = 'running' and claim_token = %s returning state""",
+                (f"released: {body.reason}", job_id, body.claim_token)).fetchone()
+        if not row:
+            raise HTTPException(409, "this claim is no longer valid")
+        return {"job_state": row["state"]}
 
     @app.post("/agent/masters", status_code=201)
     def agent_masters(body: MastersIn, client_id: UUID = Depends(agent_dep), conn: psycopg.Connection = Depends(conn_dep)):

@@ -56,8 +56,19 @@ The desktop in `desk/`, served by the Person 3 control server, supports:
 - Retrieval limited to the selected company's ledgers, vendors, earlier bills and corrections, plus copied shared
   GST/HSN hints. A saved correction wins and sets the party ledger; a memory whose known vendor GSTIN conflicts is excluded
   before ranking, and equally scored corrections rank newest first. The model is not retrained.
-- Maker-checker: a person who edited a bill cannot approve it. Desk approval never queues a posting job, and the
+- Maker-checker: a person who edited a bill cannot approve it. Plain approval never queues a posting job; **Approve and post to Tally** is Phase 1 only (see below), and the
   approval record is kept.
+
+**Phase 1 posting (test only).** One complete path from these screens to one disposable Tally company, with the mock
+provider. A named owner (`FINLEDGER_POSTING_OWNER_USER_ID`) turns posting on for a company named
+`FinLedger Live Test <date>`; a person approves the bill; `python -m finledger_tally run-once` handles one job in a console
+after a typed confirmation. Bills with tax can be approved but not posted. Policy-clear never posts. Real client companies,
+payments, ledger creation, offline XML, TDS and notes stay out of scope, and the first real Import needs its owner's
+separate approval. Real AI, real sign-in, taxed vouchers and client use remain unproven.
+
+For local testing only, `FINLEDGER_DEV_LOGIN_USERS=email=token,...` with `FINLEDGER_ENV=development` gives named test users
+a sign-in on a loopback address. It is refused anywhere else and is not real sign-in. `npm run test:stack` in `desk/` runs
+the journeys against a simulated Tally.
 
 Not part of this MVP, even where code exists elsewhere in the repository: email intake, finished every-bill TDS,
 purchase-order / goods-receipt / three-way matching on the main screen, outstanding bills, Tally posting or the post

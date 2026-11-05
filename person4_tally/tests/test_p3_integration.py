@@ -73,9 +73,20 @@ def _draft(doc):
             "attachment_document_id": doc, "reasons": [], "map_trace_id": "22222222-2222-2222-2222-222222222222"}
 
 
+def _posting_on(conn, world, cid):
+    """The platform's posting switch on for this test client, so the real approve() can create the real job."""
+    with tenant(conn, cid):
+        conn.execute("""insert into erp_links(client_id,erp_type,company_name,company_guid,posting_enabled_at,posting_enabled_by)
+                        values (%s,'tally',%s,%s,now(),%s)
+                        on conflict (client_id) do update set company_guid=excluded.company_guid,
+                          posting_enabled_at=excluded.posting_enabled_at,posting_enabled_by=excluded.posting_enabled_by""",
+                     (cid, TEST_CO[0], TEST_CO[1], world["admin"]))
+
+
 def _approved(conn, world, document):
     svc = ControlService(conn)
     cid = world["client"]["id"]
+    _posting_on(conn, world, cid)
     svc.score(cid, document, _canonical(document), world["clerk"])
     routed = svc.submit_draft(cid, document, _draft(document), world["clerk"])
     svc.approve(cid, document, world["approver"], post=True, expected_revision=routed["revision"])

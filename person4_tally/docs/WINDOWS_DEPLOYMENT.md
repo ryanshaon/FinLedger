@@ -1,8 +1,8 @@
 # Person 4: Windows deployment assessment (2026-10-11)
 
-> **Status: assessment only.** Nothing is installed on any PC, no service or scheduled task exists, and the agent
-> cannot run unattended yet: Person 2 has no route to hand it post jobs (contract gap 10). This page says what a
-> deployment needs and how the existing code behaves, so the wrapper can be built quickly once the routes exist.
+> **Status: assessment only.** Nothing is installed on any PC and no service or scheduled task exists. Phase 1 allows no
+> unattended posting: `python -m finledger_tally run-once` handles one job in a console, after a typed confirmation. This
+> page says what a later deployment needs and how the existing code behaves.
 
 What runs today on the Tally PC: the read-only capture kit (`tally_identity_probe/*.cmd`) and, if Python is present,
 `python -m finledger_tally config|health` (read-only). Nothing on this page has been executed on Harshith's PC.

@@ -7,11 +7,76 @@ import { BillTable } from "@/pages/Clients";
 import { EmptyState, LoadError, SearchField, TableSkeleton } from "@/pages/states";
 import { QUEUES, queueHref, type QueueKey } from "@/router";
 import type { LiveBill } from "@/live";
+import type { PostingPanel } from "@/types";
 
 const DEFAULT_MAX_UPLOAD = 25 * 1024 * 1024;
 const UPLOAD_ROLES = ["ap_clerk", "firm_admin"];
 const ACCEPT = ".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png";
 const EXTENSIONS = /\.(pdf|jpe?g|png)$/i;
+
+function PostingSwitch({ clientId }: { clientId: string }) {
+  const [panel, setPanel] = useState<PostingPanel | null>(null);
+  const [guid, setGuid] = useState("");
+  const [name, setName] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    let live = true;
+    setPanel(null);
+    api.posting(clientId)
+      .then((next) => { if (live) setPanel(next); })
+      .catch(() => { if (live) setPanel(null); });
+    return () => { live = false; };
+  }, [clientId]);
+
+  async function change(action: () => Promise<unknown>) {
+    setBusy(true);
+    setError("");
+    try {
+      await action();
+      setPanel(await api.posting(clientId));
+    } catch (reason) {
+      setError(errorMessage(reason, "The desk could not change posting."));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!panel) return null;
+  return (
+    <section aria-label="Tally posting" className="space-y-2 rounded-xl border border-border bg-card p-4">
+      <p role="status" className="text-sm font-medium">
+        {panel.enabled ? "Posting is ON for this test company." : "Posting is off."}
+      </p>
+      <p className="text-xs text-muted-foreground">
+        Company: {panel.company_name ?? "not paired"}
+        {panel.company_guid ? ` · ${panel.company_guid}` : ""}
+        {" · "}Agent last seen: {panel.agent_last_seen_at ?? "never"}
+      </p>
+      {error ? <p role="alert" className="text-sm">{error}</p> : null}
+      {panel.can_change && panel.enabled ? (
+        <Button variant="outline" disabled={busy} onClick={() => void change(() => api.disablePosting(clientId))}>Disable posting</Button>
+      ) : null}
+      {panel.can_change && !panel.enabled ? (
+        <form
+          className="flex flex-wrap items-end gap-2"
+          onSubmit={(event) => { event.preventDefault(); void change(() => api.enablePosting(clientId, guid.trim(), name)); }}
+        >
+          <label className="text-sm font-medium">
+            Company GUID
+            <input className="mt-1 block w-80 rounded-md border border-border bg-background px-2 py-1 text-sm" value={guid} onChange={(event) => setGuid(event.target.value)} />
+          </label>
+          <label className="text-sm font-medium">
+            Type the company name
+            <input className="mt-1 block w-72 rounded-md border border-border bg-background px-2 py-1 text-sm" value={name} onChange={(event) => setName(event.target.value)} />
+          </label>
+          <Button type="submit" variant="outline" disabled={busy || !guid.trim() || !name}>Enable posting</Button>
+        </form>
+      ) : null}
+    </section>
+  );
+}
 
 export function QueuePage({
   clientId,
@@ -119,6 +184,7 @@ export function QueuePage({
         <PageHeader title={name || current.label} description={current.context} />
         <Button variant="outline" disabled={pending} onClick={() => setRefresh(value => value + 1)}>Refresh queue</Button>
       </div>
+      <PostingSwitch clientId={clientId} />
       {canUpload ? (
         <form
           aria-label="Invoice upload"

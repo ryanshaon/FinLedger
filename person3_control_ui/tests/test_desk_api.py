@@ -11,7 +11,7 @@ from finledger_platform.browser_sessions import StaffSession
 from finledger_platform.db import tenant
 from finledger_platform.staff_invites import StaffInvitations
 from test_invites import FakeAdmin, Sessions, admin_sessions
-from test_service import canonical, draft
+from test_service import canonical, draft, exempt_draft, exempt_invoice
 
 SAME_ORIGIN = {"Origin": "http://testserver"}
 
@@ -74,12 +74,12 @@ def test_desk_queue_save_and_send_back(pool, conn, world, document):
         assert conn.execute("select count(*) as n from correction_events where document_id=%s", (document,)).fetchone()["n"] == 1
 
 
-def test_desk_approve_and_post_uses_the_service(pool, conn, world, document):
+def test_desk_approve_and_post_uses_the_service(pool, conn, world, document, posting_on):
     service = ControlService(conn)
     service.score(world["client"]["id"], document,
-                  canonical(document, confidences={"invoice_no": .2, "date": .2, "gstin": .99, "total": .99}),
+                  exempt_invoice(document, confidences={"invoice_no": .2, "date": .2, "gstin": .99, "total": .99}),
                   world["clerk"])
-    routed = service.submit_draft(world["client"]["id"], document, draft(document), world["clerk"])
+    routed = service.submit_draft(world["client"]["id"], document, exempt_draft(document), world["clerk"])
     client_id = world["client"]["id"]
     approver = TestClient(create_app(pool, source_url=lambda path, name: "/files/signed"))
     headers = {"Authorization": f"Bearer {world['approver_token']}", **SAME_ORIGIN}
