@@ -260,6 +260,16 @@ every completed or WIP change. No uncommitted implementation may remain on the P
 
 ## Latest status
 
+**2026-11-06 — hosted synthetic queue proof passed:** PR #64 merged with green CI. On
+`smnfnnwmasnsuuwrboge`, the restricted `fl_map` login claimed and finished its fixed synthetic
+map job within a forced rollback; a wrong token and an extract-queue claim were denied, and
+original fixture lease/state was restored. Mapping, correction isolation, no-post and cleanup
+passed again. Independent counts: **0 firms, clients, documents, RAG chunks, jobs, usage rows and
+reservations**. Local synthetic intake-to-review journey **8 passed**; role/queue **10 passed**;
+map fixture **5 passed**. This does not prove concurrent SKIP LOCKED, real intake/extraction,
+live providers or Tally. Synthetic seed/cleanup and rolled-back queue update were the only hosted
+SQL operations; sequences may have advanced. The tenant-scoped direct jobs write gap below remains.
+
 **2026-11-06 — queue proof and permission review in progress:** Branch
 `test/hosted-map-queue-claim` adds a rollback-only fixture-specific map claim/finish check and
 isolated local role tests. The synthetic full intake-to-review journey passed **8 tests** locally;
