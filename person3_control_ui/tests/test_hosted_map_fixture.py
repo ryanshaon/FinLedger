@@ -18,7 +18,7 @@ DOCS = ('00000000-0000-4000-8000-00000000da10', '00000000-0000-4000-8000-0000000
 
 
 def assert_fixture_clean(owner):
-    for table in ('rag_chunks', 'llm_usage_rows', 'llm_token_reservations', 'jobs', 'voucher_drafts', 'workflow_events', 'correction_events', 'documents'):
+    for table in ('rag_chunks', 'llm_usage_rows', 'llm_token_reservations', 'jobs', 'voucher_drafts', 'workflow_events', 'correction_events', 'documents', 'document_assets', 'canonical_invoices', 'risk_assessments', 'review_tasks', 'approvals', 'posting_attempts'):
         assert owner.execute(f'select count(*) from {table} where client_id = any(%s::uuid[])', (list(CLIENTS),)).fetchone()[0] == 0, table
     assert owner.execute('select count(*) from clients where firm_id=%s', (FIRM,)).fetchone()[0] == 0
     assert owner.execute('select count(*) from users where firm_id=%s', (FIRM,)).fetchone()[0] == 0
