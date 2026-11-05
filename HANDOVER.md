@@ -260,6 +260,18 @@ every completed or WIP change. No uncommitted implementation may remain on the P
 
 ## Latest status
 
+**2026-11-06 — hand back to Claude at owner threshold:** Code and PR #66 are on
+`hardening/jobs-write-boundary` at `c51e609`; this handover is on `wip/jobs-write-boundary`.
+Exact-head image and desk CI passed; both test jobs were pending at handoff. Full local runs before
+the last lock-timeout change were **389 platform / 121 control passed**; after that change the
+complete control service file passed **21 tests**. Do not treat the earlier full-suite counts as
+verification of the final head. Next: inspect PR #66 CI and fix any failures, review migration 016
+and residual queued-post INSERT risk, then merge only with green exact-head CI. Migration 016 was
+**not applied to Supabase**. The earlier committed hosted synthetic queue/RAG proof passed and
+cleaned its fixture; only sequences may have advanced. No Person 4 edits or customer data changes.
+After a reviewed merge, verify migration/application compatibility before applying it to staging;
+the user has not selected a live AI provider or hosting budget. No credentials belong in Git.
+
 **2026-11-06 — queue write boundary and edit race:** Branch `hardening/jobs-write-boundary`
 prepares migration 016: remove direct app UPDATE/DELETE on jobs, restrict INSERT to producer
 columns, and use tenant-checked definer functions to lock post jobs and cancel queued/dead
