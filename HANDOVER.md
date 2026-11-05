@@ -260,6 +260,18 @@ every completed or WIP change. No uncommitted implementation may remain on the P
 
 ## Latest status
 
+**2026-11-06 — queue proof and permission review in progress:** Branch
+`test/hosted-map-queue-claim` adds a rollback-only fixture-specific map claim/finish check and
+isolated local role tests. The synthetic full intake-to-review journey passed **8 tests** locally;
+queue role and existing queue tests passed **10 tests** locally; the mapping fixture suite passed
+**5 tests** locally, including rollback and unrelated-claim rejection. The general `finledger_app` role
+inherits direct write privileges on tenant `jobs` from migration 003, so a session with SQL access
+can alter its own tenant's queue rows outside the worker functions. Hosted read-only checks confirmed
+INSERT/UPDATE/DELETE grants and enabled RLS. This is a least-privilege gap,
+not a demonstrated public-endpoint exploit. The control service currently updates queued post
+jobs during cancellation; any hardening must preserve that path. No new hosted changes have been
+made during this batch. Hosted queue proof, final CI and permission remediation remain pending.
+
 **2026-11-05 — hosted synthetic mapping/RAG proof passed:** Ran the committed, exact-head
 `scripts/hosted_map_proof.py` from PR #62 against replacement project `smnfnnwmasnsuuwrboge`
 using the restricted `fl_map` session-pooler login and a process-local mock for synthetic invoices.

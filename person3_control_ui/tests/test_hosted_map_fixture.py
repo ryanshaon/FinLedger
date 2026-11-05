@@ -1,6 +1,7 @@
 import json
 import importlib.util
 from pathlib import Path
+from uuid import uuid4
 
 import psycopg
 import pytest
@@ -8,6 +9,7 @@ from psycopg.rows import dict_row
 
 from finledger_platform.db import assert_rls_applies, tenant
 from finledger_platform.map_worker import default_map, process_map
+from finledger_platform.queue import claim, finish
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -32,6 +34,22 @@ def exercise_map_fixture(owner_dsn, app_dsn):
             with psycopg.connect(app_dsn, row_factory=dict_row) as conn:
                 assert_rls_applies(conn)
                 assert conn.execute("select pg_has_role(current_user,'finledger_worker_map','member') as allowed").fetchone()['allowed']
+                # Keep the queue claim and settlement invisible to other sessions, even on failure.
+                with conn.transaction(force_rollback=True):
+                    with tenant(conn, CLIENTS[0]):
+                        fixture = conn.execute((RECOVERY / 'hosted_map_queue_prepare.sql').read_text(encoding='utf-8')).fetchone()
+                        assert fixture is not None
+                    job = claim(conn, 'map')
+                    assert job is not None and job['id'] == fixture['id'] and str(job['document_id']) == DOCS[0]
+                    assert finish(conn, job['id'], uuid4(), ok=True) is None
+                    assert finish(conn, job['id'], job['claim_token'], ok=True) == 'done'
+                with tenant(conn, CLIENTS[0]):
+                    restored = conn.execute("select state,attempts,claim_token='00000000-0000-4000-8000-00000000ea10'::uuid as original_token,locked_until>now()+interval '90 years' as original_lease from jobs where id=%s", (fixture['id'],)).fetchone()
+                    assert restored == {'state': 'running', 'attempts': 1, 'original_token': True, 'original_lease': True}
+                with conn.transaction(force_rollback=True):
+                    with pytest.raises(psycopg.errors.InsufficientPrivilege):
+                        with conn.transaction():
+                            claim(conn, 'extract')
                 for client_id, document_id in zip(CLIENTS, DOCS):
                     with tenant(conn, client_id):
                         other_doc = DOCS[1] if document_id == DOCS[0] else DOCS[0]
@@ -75,6 +93,14 @@ def test_cleanup_when_mapping_fails(owner_dsn, app_dsn, monkeypatch):
         exercise_map_fixture(owner_dsn, app_dsn)
     with psycopg.connect(owner_dsn) as owner:
         assert owner.execute('select count(*) from firms where id=%s', (FIRM,)).fetchone()[0] == 0
+
+
+def test_non_fixture_claim_aborts_and_cleans_up(owner_dsn, app_dsn, monkeypatch):
+    monkeypatch.setitem(globals(), 'claim', lambda *args: {'id': -1, 'document_id': str(uuid4())})
+    with pytest.raises(AssertionError):
+        exercise_map_fixture(owner_dsn, app_dsn)
+    with psycopg.connect(owner_dsn) as owner:
+        assert_fixture_clean(owner)
 
 
 def test_cleanup_refuses_unexpected_document(owner_dsn, app_dsn):
