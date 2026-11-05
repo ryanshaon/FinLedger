@@ -260,6 +260,16 @@ every completed or WIP change. No uncommitted implementation may remain on the P
 
 ## Latest status
 
+**2026-11-05 — hosted synthetic mapping/RAG proof passed:** Ran the committed, exact-head
+`scripts/hosted_map_proof.py` from PR #62 against replacement project `smnfnnwmasnsuuwrboge`
+using the restricted `fl_map` session-pooler login and a process-local mock for synthetic invoices.
+Both synthetic companies mapped; a previous-bill correction set only company A's party ledger,
+company B remained isolated, no post job was created, and fixture cleanup passed. Independent
+read-only counts afterward: **0 firms, clients, documents, RAG chunks, jobs, usage rows and token
+reservations**. Sequences may have advanced. Four local PostgreSQL fixture/cleanup tests and all
+PR #62 CI checks passed. The proof preclaims fixture-specific jobs and calls `process_map`; it does
+not test shared queue claiming, intake, extraction, live AI, real Tally, or hosted deployment.
+
 **2026-11-05 — synthetic hosted map proof preparation:** Branch
 `test/hosted-map-retrieval-proof` adds fixed, operator-only synthetic seed/cleanup SQL and
 a real `process_map` test across two client contexts. It preclaims only fixture jobs (no shared
