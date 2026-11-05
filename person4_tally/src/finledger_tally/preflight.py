@@ -23,6 +23,7 @@ company is not a client's; the person running the test confirms that, and the su
 from __future__ import annotations
 
 from dataclasses import dataclass
+from decimal import Decimal
 from typing import Any, Mapping
 
 from .company import list_companies, pinned_export
@@ -92,7 +93,7 @@ def confirmation_phrase(company_guid: str, document_id: str, request_sha256: str
 
 def live_import_preflight(job: Mapping[str, Any], auth: PostAuthorization, settings: AgentSettings, *,
                           disposable_company_guid: str | None, transport: TallyTransport | None = None,
-                          posting_expected: bool = False) -> PreflightReport:
+                          posting_expected: bool = False, expected_total: Decimal | None = None) -> PreflightReport:
     """Every check the procedure requires, read-only. ``posting_expected`` is False for the dry preflight (posting
     must still be off) and True only inside ``execute_live_import``."""
     checks: list[Check] = []
@@ -154,9 +155,10 @@ def live_import_preflight(job: Mapping[str, Any], auth: PostAuthorization, setti
 
     try:
         masters = fetch_ledger_masters(settings.company_name, expected_guid=guid, transport=transport)
-        first = preview_purchase_xml(job, company=company, expected_company_name=settings.company_name, masters=masters)
+        first = preview_purchase_xml(job, company=company, expected_company_name=settings.company_name, masters=masters,
+                                     expected_total=expected_total)
         second = preview_purchase_xml(job, company=company, expected_company_name=settings.company_name,
-                                      masters=masters)
+                                      masters=masters, expected_total=expected_total)
     except DraftRejected as exc:
         add("preview", False, f"draft refused: {sorted(exc.codes)}")
         return PreflightReport(False, tuple(checks), doc, rev, guid)
@@ -184,18 +186,19 @@ def _all_vouchers(company, job):
 
 def execute_live_import(job: Mapping[str, Any], auth: PostAuthorization, settings: AgentSettings, *,
                         disposable_company_guid: str | None, confirmation: str,
-                        transport: TallyTransport | None = None) -> tuple[PreflightReport, PostOutcome | None]:
+                        transport: TallyTransport | None = None,
+                        expected_total: Decimal | None = None) -> tuple[PreflightReport, PostOutcome | None]:
     """Re-run the preflight with posting enabled; send ONE Import only if it passes and ``confirmation`` matches."""
     transport = transport or settings.transport()
     report = live_import_preflight(job, auth, settings, disposable_company_guid=disposable_company_guid,
-                                   transport=transport, posting_expected=True)
+                                   transport=transport, posting_expected=True, expected_total=expected_total)
     if not report.ready:
         return report, None
     if not isinstance(confirmation, str) or confirmation != report.confirmation:
         bad = Check("confirmation", False, "the typed confirmation does not match this exact request; nothing sent")
         return PreflightReport(False, report.checks + (bad,), report.document_id, report.revision,
                                report.company_guid, report.reference, report.amount, report.request_sha256), None
-    return report, post_approved(job, auth, settings, transport=transport,
+    return report, post_approved(job, auth, settings, transport=transport, expected_total=expected_total,
                                  expected_request_sha256=report.request_sha256)
 
 

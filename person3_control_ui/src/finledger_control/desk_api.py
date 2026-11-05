@@ -6,6 +6,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import re
 import secrets
 from datetime import date, datetime
 from decimal import Decimal
@@ -30,6 +32,7 @@ from .service import Conflict, ControlService, Forbidden, NotFound
 from .web import processing_label
 
 LOGIN_CSRF = "fl_login_csrf"
+_COMPANY_GUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 _INVALID = "This request is incomplete or invalid. Nothing was saved."
 
 
@@ -81,6 +84,17 @@ def register_desk_api(app: FastAPI, *, pool, source_url, browser_sessions, staff
         require_aal2(who)
         if not who["firm_admin"]:
             raise HTTPException(403, "Firm admin only")
+
+    def require_posting_owner(who) -> None:
+        """Only the one person named on this server may enable posting or reconcile. Being a firm admin isn't enough."""
+        require_admin(who)
+        owner = os.environ.get("FINLEDGER_POSTING_OWNER_USER_ID", "").strip()
+        if not owner or str(who["user_id"]) != owner:
+            raise HTTPException(403, "Only the posting owner can do this")
+
+    def is_posting_owner(who) -> bool:
+        owner = os.environ.get("FINLEDGER_POSTING_OWNER_USER_ID", "").strip()
+        return bool(owner) and str(who["user_id"]) == owner and bool(who["firm_admin"]) and not mfa_blocks(who)
 
     def desk_roles(client_id, who, conn):
         roles = conn.execute("select user_client_roles(%s,%s) as roles", (who["user_id"], client_id)).fetchone()["roles"]
@@ -171,6 +185,7 @@ def register_desk_api(app: FastAPI, *, pool, source_url, browser_sessions, staff
             "band": item.get("band"),
             "score": item.get("score"),
             "state_label": processing_label(item),
+            "status_reason": item.get("status_reason"),
         }
 
     if browser_sessions is not None:
@@ -430,9 +445,20 @@ def register_desk_api(app: FastAPI, *, pool, source_url, browser_sessions, staff
                 raise HTTPException(problem(exc), str(exc)) from None
             name = client_name(conn, client_id)
             compared = ControlService(conn).bill_match(client_id, document_id)
+            post = ControlService(conn).posting_job(client_id, document_id)
         detail = dict(detail)
         detail["state_label"] = processing_label({"status": detail.get("status")})
         token = csrf_value(request)
+        posting_job = None
+        if post is not None:
+            uncertain = post["attempt_result"] == "outcome_uncertain" or post["job_state"] == "needs_reconciliation"
+            posting_job = {
+                "job_state": post["job_state"], "attempt_result": post["attempt_result"], "erp_id": post["erp_id"],
+                "error": post["error"], "reconcile_decision": post["reconcile_decision"],
+                "can_reconcile": uncertain and not post["reconcile_decision"] and is_posting_owner(who),
+                "can_return_to_review": (post["attempt_result"] == "failed" and detail.get("status") == "exception"
+                                         and bool(roles & {"approver", "firm_admin"})),
+            }
         return api_json({
             "client": {"id": client_id, "name": name},
             "roles": sorted(roles),
@@ -440,7 +466,83 @@ def register_desk_api(app: FastAPI, *, pool, source_url, browser_sessions, staff
             "invoice": detail,
             "match": compared["match"],
             "posting": compared["posting"],
+            "posting_job": posting_job,
         }, request=request, csrf=token)
+
+    @app.get("/api/clients/{client_id}/posting")
+    def posting_panel(request: Request, client_id: UUID, who=Depends(api_user)):
+        with pool.connection() as conn:
+            desk_roles(client_id, who, conn)
+            link = ControlService(conn).posting_switch(client_id) or {}
+        token = csrf_value(request)
+        return api_json({
+            "enabled": bool(link.get("posting_enabled_at")), "company_name": link.get("company_name"),
+            "company_guid": link.get("company_guid"), "enabled_at": link.get("posting_enabled_at"),
+            "enabled_by": link.get("posting_enabled_by"), "agent_last_seen_at": link.get("last_seen_at"),
+            "can_change": is_posting_owner(who), "csrf_token": token,
+        }, request=request, csrf=token)
+
+    @app.post("/api/clients/{client_id}/posting/enable")
+    async def posting_enable(request: Request, client_id: UUID, who=Depends(api_user)):
+        body = await read_json(request)
+        check_csrf(request, body)
+        guid = need_str(body, "company_guid", 36, required=True)
+        name = need_str(body, "confirm_company_name", 500, required=True)
+        if not _COMPANY_GUID.fullmatch(guid):
+            raise HTTPException(422, _INVALID)
+        require_posting_owner(who)
+        with pool.connection() as conn:
+            desk_roles(client_id, who, conn)
+            try:
+                ControlService(conn).enable_posting(client_id, who["user_id"], company_guid=guid,
+                                                    confirm_company_name=name)
+            except (NotFound, Forbidden, Conflict) as exc:
+                raise HTTPException(problem(exc), str(exc)) from None
+        return api_json({"enabled": True})
+
+    @app.post("/api/clients/{client_id}/posting/disable")
+    async def posting_disable(request: Request, client_id: UUID, who=Depends(api_user)):
+        body = await read_json(request)
+        check_csrf(request, body)
+        require_posting_owner(who)
+        with pool.connection() as conn:
+            desk_roles(client_id, who, conn)
+            ControlService(conn).disable_posting(client_id, who["user_id"])
+        return api_json({"enabled": False})
+
+    @app.post("/api/clients/{client_id}/invoices/{document_id}/reconcile")
+    async def reconcile_post(request: Request, client_id: UUID, document_id: UUID, who=Depends(api_user)):
+        body = await read_json(request)
+        check_csrf(request, body)
+        decision = body.get("decision")
+        note = need_str(body, "note", 2000, required=True)
+        erp_id = need_str(body, "erp_id", 200) if decision == "posted" else None
+        if decision not in ("posted", "absent") or len(note.strip()) < 10 or (decision == "posted" and not erp_id):
+            raise HTTPException(422, _INVALID)
+        require_posting_owner(who)
+        with pool.connection() as conn:
+            desk_roles(client_id, who, conn)
+            try:
+                result = ControlService(conn).reconcile_post(client_id, document_id, who["user_id"], decision=decision,
+                                                             erp_id=erp_id, note=note.strip())
+            except (NotFound, Forbidden, Conflict) as exc:
+                raise HTTPException(problem(exc), str(exc)) from None
+        return api_json(result)
+
+    @app.post("/api/clients/{client_id}/invoices/{document_id}/return-to-review")
+    async def return_to_review(request: Request, client_id: UUID, document_id: UUID, who=Depends(api_user)):
+        body = await read_json(request)
+        check_csrf(request, body)
+        revision = need_revision(body)
+        note = need_str(body, "note", 2000, required=True)
+        with pool.connection() as conn:
+            desk_roles(client_id, who, conn)
+            try:
+                result = ControlService(conn).return_to_review(client_id, document_id, who["user_id"], note.strip(),
+                                                               expected_revision=revision)
+            except (NotFound, Forbidden, Conflict) as exc:
+                raise HTTPException(problem(exc), str(exc)) from None
+        return api_json(result)
 
     @app.post("/api/clients/{client_id}/invoices/{document_id}/edit")
     async def edit(request: Request, client_id: UUID, document_id: UUID, who=Depends(api_user)):

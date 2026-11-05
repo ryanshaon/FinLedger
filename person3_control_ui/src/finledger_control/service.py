@@ -13,8 +13,11 @@ from finledger_platform.purchase_documents import find_goods_receipt, find_purch
 
 from .boundary import validate_draft, validate_invoice
 from .risk import RiskContext, score_invoice
-from .three_way import assess_three_way, posting_view
+from .three_way import PHASE1_REASONS, assess_three_way, phase1_posting_block, posting_view
 from .workflow import Action, Policy, Role, TransitionContext, decide_route, transition, InvalidTransition
+
+
+LIVE_TEST_NAME_PREFIX = "FinLedger Live Test"  # person4 preflight.LIVE_TEST_NAME_PREFIX; pinned by a person4 contract test
 
 
 class Conflict(RuntimeError): pass
@@ -109,12 +112,28 @@ class ControlService:
                                   (client_id, document_id, row["band"], reason))
                 self._set_status(client_id, document_id, "tax_checked", "in_review", "send_review", actor_id)
             else:
+                # Policy-clear approves the bill but never posts it: every post job needs a human approval.
                 self._set_status(client_id, document_id, "tax_checked", "approved", "policy_clear", actor_id)
                 self.conn.execute("insert into approvals(client_id,document_id,kind,revision) values(%s,%s,'policy_clear',1)", (client_id, document_id))
-                self._enqueue_post(client_id, document_id, 1)
             return {"route": route.value, "status": "in_review" if route.value == "review" else "approved", "revision": 1}
 
+    def _phase1_block(self, client_id, document_id, revision, *, human_approved=None) -> str | None:
+        """Caller already holds the client transaction. ``human_approved`` overrides the lookup for an approval being
+        recorded in the same transaction."""
+        link = self.conn.execute("select posting_enabled_at,company_guid from erp_links where client_id=%s", (client_id,)).fetchone()
+        draft = self.conn.execute("select payload from voucher_drafts where document_id=%s", (document_id,)).fetchone()
+        invoice = self.conn.execute("select payload from canonical_invoices where document_id=%s", (document_id,)).fetchone()
+        if human_approved is None:
+            human_approved = bool(self.conn.execute(
+                "select 1 from approvals where document_id=%s and kind='human' and revision=%s and superseded_at is null",
+                (document_id, revision)).fetchone())
+        return phase1_posting_block(draft["payload"] if draft else None, invoice["payload"] if invoice else None,
+                                    posting_enabled=bool(link and link["posting_enabled_at"] and link["company_guid"]),
+                                    human_approved=human_approved)
+
     def _enqueue_post(self, client_id, document_id, revision):
+        block = self._phase1_block(client_id, document_id, revision)
+        if block: raise Conflict(PHASE1_REASONS[block])  # the last gate; every post job in the product passes here
         draft = self.conn.execute("select payload from voucher_drafts where document_id=%s", (document_id,)).fetchone()["payload"]
         payload = {"document_id": str(document_id), "client_id": str(client_id), "revision": revision,
                    "idempotency_key": f"{document_id}:r{revision}", "voucher_draft": draft}
@@ -149,7 +168,15 @@ class ControlService:
         purchase_order = find_purchase_order(self.conn, invoice.get("po_number"))
         goods_receipt = find_goods_receipt(self.conn, invoice.get("grn_number"), invoice.get("po_number"))
         match = assess_three_way(invoice, purchase_order, goods_receipt, (mode or {}).get("match_mode") or "invoice_only")
-        return match, posting_view(draft)
+        posting = posting_view(draft)
+        if match["match_mode"] != "three_way" or not posting["blocked"]:
+            revision_row = self.conn.execute("select status from documents where id=%s", (document_id,)).fetchone()
+            draft_revision = self.conn.execute("select revision from voucher_drafts where document_id=%s", (document_id,)).fetchone()
+            in_review = bool(revision_row and revision_row["status"] == "in_review")
+            code = self._phase1_block(client_id, document_id, draft_revision["revision"] if draft_revision else 0,
+                                      human_approved=True if in_review else None)
+            posting = {"blocked": code is not None, "reason": PHASE1_REASONS[code] if code else None, "code": code}
+        return match, posting
 
     def bill_match(self, client_id, document_id):
         with self._tx(client_id):
@@ -172,7 +199,7 @@ class ControlService:
             match, posting = self._open_match(client_id, document_id)
             if match["holds_review"]:
                 raise Conflict(match["review_note"])
-            block_post = match["match_mode"] == "three_way" and posting["blocked"]
+            block_post = posting["blocked"]
             enqueue = bool(post) and not block_post
             actor, maker = str(actor_id), str(row["maker_id"])
             editors = self._editor_ids(document_id, row["created_by"])
@@ -197,10 +224,12 @@ class ControlService:
         allowed = {"party_ledger", "narration", "bill_wise.ref", "bill_wise.due_date"}
         if field not in allowed: raise Forbidden("field is not editable here")
         with self._tx(client_id):
-            row = self.conn.execute("""select v.payload,v.revision,d.status
+            row = self.conn.execute("""select v.payload,v.revision,d.status,
+                exists(select 1 from posting_attempts p where p.document_id=d.id and p.result='outcome_uncertain') uncertain_post
                 from voucher_drafts v join documents d on d.id=v.document_id where v.document_id=%s for update of v,d""", (document_id,)).fetchone()
             if not row: raise NotFound("draft not found")
             if row["status"] in {"posted","reconciled","closed","scheduled","paid"}: raise Conflict(f"cannot edit {row['status']} document")
+            if row["uncertain_post"]: raise Conflict("cannot edit while a post outcome is uncertain")
             if row["revision"] != expected_revision: raise Conflict("draft changed; refresh before saving")
             try:
                 active_post = self.conn.execute('select lock_post_jobs_for_edit(%s) as active', (document_id,)).fetchone()['active']
@@ -239,26 +268,130 @@ class ControlService:
             self._event(client_id,document_id,row["status"],new,"ask_resubmit" if resubmit else "reject",actor_id,{"note":note})
             return {"status":new,"revision":row["revision"]}
 
-    def erp_result(self, client_id, document_id, *, ok, job_id, revision, idempotency_key, erp_id=None, error=None):
+    def erp_result(self, client_id, document_id, *, ok, job_id, revision, idempotency_key, erp_id=None, error=None,
+                   uncertain=False, request_sha256=None, response_sha256=None):
+        if ok and uncertain: raise Conflict("a posting result cannot be both posted and uncertain")
+        outcome = "posted" if ok else "outcome_uncertain" if uncertain else "failed"
         with self._tx(client_id):
-            row = self.conn.execute("""select d.status,p.id,p.revision,p.idempotency_key,p.result
+            row = self.conn.execute("""select d.status,p.id,p.revision,p.idempotency_key,p.result,p.erp_id
                 from documents d join posting_attempts p on p.document_id=d.id
                 where d.id=%s and p.job_id=%s for update of d,p""", (document_id,job_id)).fetchone()
             if not row: raise NotFound("document not found")
             if row["revision"] != revision: raise Conflict("posting callback revision mismatch")
             if row["idempotency_key"] != idempotency_key: raise Conflict("posting callback idempotency key mismatch")
-            if row["result"] != "pending": return {"status":"posted" if row["result"] == "posted" else "exception"}
+            if row["result"] != "pending":
+                body = {"status":"posted" if row["result"] == "posted" else "exception"}
+                if row["result"] != outcome or (ok and row["erp_id"] != erp_id):
+                    self._event(client_id,document_id,row["status"],row["status"],"erp_result_conflict",
+                                metadata={"recorded":row["result"],"reported":outcome})
+                    body["conflict"] = True
+                return body
             action = Action.POSTED if ok else Action.ERP_FAILED
             try: new = transition(row["status"], action, TransitionContext("person4", set()))
             except InvalidTransition as exc: raise Conflict(str(exc)) from exc
             self.conn.execute("update documents set status=%s,status_reason=%s,updated_at=now() where id=%s", (new,error,document_id))
-            self.conn.execute("update posting_attempts set result=%s,erp_id=%s,error=%s,completed_at=now() where id=%s",
-                              ("posted" if ok else "failed",erp_id,error,row["id"]))
-            self._event(client_id,document_id,row["status"],new,"erp_posted" if ok else "erp_failed",metadata={"erp_id":erp_id,"error":error})
+            self.conn.execute("""update posting_attempts set result=%s,erp_id=%s,error=%s,request_sha256=%s,response_sha256=%s,
+                completed_at=now() where id=%s""", (outcome,erp_id,error,request_sha256,response_sha256,row["id"]))
+            action_name = "erp_posted" if ok else "erp_uncertain" if uncertain else "erp_failed"
+            self._event(client_id,document_id,row["status"],new,action_name,metadata={"erp_id":erp_id,"error":error})
             if ok and new == "posted":
                 from finledger_platform.client_index import index_posted_document
                 index_posted_document(self.conn, client_id, document_id, erp_id)
             return {"status":new}
+
+    def posting_job(self, client_id, document_id):
+        """Latest post job and attempt of a document, for the desk; None when it has never had a post job."""
+        with self._tx(client_id):
+            return self._latest_post(document_id)
+
+    def _latest_post(self, document_id):
+        row = self.conn.execute("""select j.id as job_id,j.state as job_state,j.claim_token,p.id as attempt_id,p.revision,
+            p.result as attempt_result,p.erp_id,p.error,p.reconcile_decision
+            from jobs j left join posting_attempts p on p.job_id=j.id
+            where j.document_id=%s and j.queue='post' order by j.id desc limit 1""", (document_id,)).fetchone()
+        return dict(row) if row else None
+
+    def reconcile_post(self, client_id, document_id, actor_id, *, decision, erp_id, note):
+        """A person checked Tally and records what they found. Never sends anything. The caller checks it is the owner."""
+        with self._tx(client_id):
+            status = self.conn.execute("select status from documents where id=%s for update", (document_id,)).fetchone()
+            if not status: raise NotFound("document not found")
+            post = self._latest_post(document_id)
+            if not post or not (post["attempt_result"] == "outcome_uncertain" or post["job_state"] == "needs_reconciliation"):
+                raise Conflict("this bill has no uncertain post to reconcile")
+            if post["reconcile_decision"]: raise Conflict("this post has already been reconciled")
+            current = status["status"]
+            actor = TransitionContext(str(actor_id), self._roles(actor_id, client_id))
+            if decision == "posted":
+                guid = (self.conn.execute("select company_guid from erp_links where client_id=%s", (client_id,)).fetchone() or {}).get("company_guid")
+                if not guid or not str(erp_id or "").startswith(f"{guid}-"):
+                    raise Conflict("the Tally ID must belong to the paired company")
+                try: new = transition(current, Action.RECONCILE_POSTED, actor)
+                except InvalidTransition as exc: raise Conflict(str(exc)) from exc
+                self.conn.execute("update posting_attempts set result='posted',erp_id=%s,completed_at=now() where id=%s", (erp_id, post["attempt_id"]))
+                job_state = "done"
+            else:
+                new = "exception"
+                self.conn.execute("update posting_attempts set result='outcome_uncertain',completed_at=now() where id=%s", (post["attempt_id"],))
+                job_state = "dead"
+            self.conn.execute("""update posting_attempts set reconcile_decision=%s,reconciled_by=%s,reconciled_at=now(),reconcile_note=%s
+                where id=%s""", (decision, actor_id, note, post["attempt_id"]))
+            self.conn.execute("update jobs set state=%s,claim_token=null,locked_until=null,updated_at=now() where id=%s", (job_state, post["job_id"]))
+            self.conn.execute("update documents set status=%s,status_reason=%s,updated_at=now() where id=%s",
+                              (new, None if decision == "posted" else "reconciled absent; this bill cannot post again in Phase 1", document_id))
+            self._event(client_id, document_id, current, new, f"reconcile_{decision}", actor_id, {"erp_id": erp_id, "note": note})
+            if new == "posted":
+                from finledger_platform.client_index import index_posted_document
+                index_posted_document(self.conn, client_id, document_id, erp_id)
+            return {"status": new, "reconcile_decision": decision}
+
+    def return_to_review(self, client_id, document_id, actor_id, note, *, expected_revision):
+        """A clear Tally rejection goes back to review as a new revision and needs a fresh approval. Uncertain posts never do."""
+        with self._tx(client_id):
+            row = self.conn.execute("""select d.status,v.revision from documents d join voucher_drafts v on v.document_id=d.id
+                where d.id=%s for update of d,v""", (document_id,)).fetchone()
+            if not row: raise NotFound("document not found")
+            if row["revision"] != expected_revision: raise Conflict("draft changed; refresh before saving")
+            post = self._latest_post(document_id)
+            if not post or post["attempt_result"] != "failed":
+                raise Conflict("only a bill Tally clearly rejected can return to review")
+            try: new = transition(row["status"], Action.RETURN_TO_REVIEW, TransitionContext(str(actor_id), self._roles(actor_id, client_id)))
+            except InvalidTransition as exc: raise Forbidden(str(exc)) from exc
+            revision = row["revision"] + 1
+            self.conn.execute("update voucher_drafts set revision=%s,updated_at=now() where document_id=%s", (revision, document_id))
+            self.conn.execute("update approvals set superseded_at=now(),superseded_by_revision=%s where document_id=%s and superseded_at is null", (revision, document_id))
+            self.conn.execute("insert into review_tasks(client_id,document_id,risk_band,reason,draft_revision) select %s,%s,band,'returned after Tally rejection',%s from risk_assessments where document_id=%s order by id desc limit 1", (client_id, document_id, revision, document_id))
+            self.conn.execute("update documents set status=%s,updated_at=now() where id=%s", (new, document_id))
+            self._event(client_id, document_id, row["status"], new, "return_to_review", actor_id, {"revision": revision, "note": note})
+            return {"status": new, "revision": revision}
+
+    def posting_switch(self, client_id):
+        with self._tx(client_id):
+            row = self.conn.execute("""select company_name,company_guid,posting_enabled_at,posting_enabled_by,last_seen_at
+                from erp_links where client_id=%s""", (client_id,)).fetchone()
+            return dict(row) if row else None
+
+    def enable_posting(self, client_id, actor_id, *, company_guid, confirm_company_name):
+        """The caller checks it is the owner. Only a company named as a disposable test company can be enabled."""
+        with self._tx(client_id):
+            row = self.conn.execute("select company_name from erp_links where client_id=%s for update", (client_id,)).fetchone()
+            if not row or not row["company_name"]: raise Conflict("pair a Tally company first")
+            if row["company_name"] != confirm_company_name: raise Conflict("the company name doesn't match the paired company")
+            if not row["company_name"].startswith(LIVE_TEST_NAME_PREFIX):
+                raise Conflict(f"Phase 1 can only post to a company named {LIVE_TEST_NAME_PREFIX} <date>")
+            entry = Jsonb([{"action": "enable", "actor": str(actor_id), "company_guid": company_guid}])
+            self.conn.execute("""update erp_links set company_guid=%s,posting_enabled_at=now(),posting_enabled_by=%s,
+                posting_switch_history=posting_switch_history || %s::jsonb where client_id=%s""",
+                              (company_guid, actor_id, entry, client_id))
+        return self.posting_switch(client_id)
+
+    def disable_posting(self, client_id, actor_id):
+        """Always allowed. A job already claimed finishes under its lease; nothing new can be claimed."""
+        with self._tx(client_id):
+            entry = Jsonb([{"action": "disable", "actor": str(actor_id)}])
+            self.conn.execute("""update erp_links set posting_enabled_at=null,posting_enabled_by=null,
+                posting_switch_history=posting_switch_history || %s::jsonb where client_id=%s""", (entry, client_id))
+        return self.posting_switch(client_id)
 
     def post_job(self, client_id, document_id):
         with self._tx(client_id):

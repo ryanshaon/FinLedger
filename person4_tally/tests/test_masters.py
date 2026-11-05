@@ -385,9 +385,10 @@ def test_only_the_transport_opens_connections_and_only_to_loopback():
             assert set(calls) == {"HOST"}
         else:
             assert not calls and "http.client" not in src, path.name
-        # The one exception: ``__main__.py sync`` sends masters/open-bills snapshots to person2 with urllib (never to
-        # Tally, never from any other module, only through ``_send``). Everything else stays loopback-transport only.
-        allowed = "requests|socket|subprocess" if path.name == "__main__.py" else "urllib|requests|socket|subprocess"
+        # The exceptions: ``__main__.py sync`` and ``platform_client.py`` talk to person2 with urllib (never to Tally,
+        # never from any other module). Everything else stays loopback-transport only.
+        talks_to_person2 = path.name in ("__main__.py", "platform_client.py")
+        allowed = "requests|socket|subprocess" if talks_to_person2 else "urllib|requests|socket|subprocess"
         assert not re.search(rf"^\s*(import|from)\s+({allowed})", src, re.MULTILINE), path.name
         if path.name == "__main__.py":
             assert src.count("urlopen") == 0 and src.count(".open(request") == 1  # one send site, in _send

@@ -54,6 +54,7 @@ class Phase(str, Enum):
     OUTCOME_UNCERTAIN = "outcome_uncertain"  # anything else after a send: never resend
     RECONCILIATION_REQUIRED = "reconciliation_required"  # a voucher with this marker exists without a confirmed post
     RECONCILED = "reconciled"  # a later read-only lookup identified exactly one matching voucher
+    REPORTED = "reported"  # the platform accepted this revision's outcome; settles nothing, so the gate ignores it
     HUMAN_CLEARED = "human_cleared"  # a person attested the uncertain/offline attempt left nothing in Tally
 
 
@@ -167,7 +168,7 @@ class FileJournal:
         event = JournalEvent(seq=seq, at=datetime.now(timezone.utc).isoformat(timespec="seconds"), phase=phase.value,
                              revision=revision, idempotency_key=idempotency_key, **fields)
         line = (json.dumps(asdict(event), sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
-        fd = os.open(folder / "journal.jsonl", os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
+        fd = os.open(folder / "journal.jsonl", os.O_WRONLY | os.O_APPEND | os.O_CREAT | getattr(os, "O_BINARY", 0), 0o600)
         try:
             _write_all(fd, line)
             os.fsync(fd)
@@ -186,7 +187,7 @@ class FileJournal:
         private_dir(folder)
         path = folder / name
         try:
-            fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_BINARY", 0), 0o600)
         except FileExistsError:
             if path.read_bytes() != data:  # a crash after saving but before the journal line: same bytes are fine
                 raise

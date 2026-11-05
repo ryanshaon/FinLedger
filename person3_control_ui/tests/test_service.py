@@ -35,6 +35,16 @@ def draft(document_id, total=11800):
             "attachment_document_id":document_id,"reasons":[],"map_trace_id":"22222222-2222-2222-2222-222222222222"}
 
 
+def exempt_invoice(document_id, **overrides):
+    values = {"cgst": 0, "sgst": 0, "total": 10000,
+              "line_items": [{"desc":"steel","hsn_sac":"7208","qty":1,"rate":10000,"taxable":10000,"tax_rate":0,"tax_amount":0}]}
+    return canonical(document_id, **{**values, **overrides})
+
+
+def exempt_draft(document_id, total=10000):
+    return {**draft(document_id, total=total), "gst": {"treatment": "exempt", "input_ledgers": [], "tax_breakup": {}}}
+
+
 def test_score_persists_marks_and_advances_to_scored(conn, world, document):
     result = ControlService(conn).score(world["client"]["id"], document, canonical(document), world["clerk"])
     assert result["band"] == "low"
@@ -63,11 +73,11 @@ def test_high_band_cannot_be_forced_to_person4(conn, world, document):
     assert svc.post_job_count(world["client"]["id"], document) == 0
 
 
-def test_approve_and_post_is_idempotent_and_audited(conn, world, document):
+def test_approve_and_post_is_idempotent_and_audited(conn, world, document, posting_on):
     svc = ControlService(conn)
     svc.score(world["client"]["id"], document,
-              canonical(document, confidences={"invoice_no":.2,"date":.2,"gstin":.99,"total":.99}), world["clerk"])
-    routed = svc.submit_draft(world["client"]["id"], document, draft(document), world["clerk"])
+              exempt_invoice(document, confidences={"invoice_no":.2,"date":.2,"gstin":.99,"total":.99}), world["clerk"])
+    routed = svc.submit_draft(world["client"]["id"], document, exempt_draft(document), world["clerk"])
     out = svc.approve(world["client"]["id"], document, world["approver"], post=True,
                       expected_revision=routed["revision"])
     assert out["status"] == "approved"
@@ -107,10 +117,10 @@ def test_reject_and_resubmit_never_enqueue_post(conn, world, document):
     assert svc.post_job_count(world["client"]["id"], document) == 0
 
 
-def test_person4_failure_moves_to_exception_without_new_post_job(conn, world, document):
+def test_person4_failure_moves_to_exception_without_new_post_job(conn, world, document, posting_on):
     svc = ControlService(conn)
-    svc.score(world["client"]["id"], document, canonical(document), world["clerk"])
-    routed = svc.submit_draft(world["client"]["id"], document, draft(document), world["clerk"])
+    svc.score(world["client"]["id"], document, exempt_invoice(document), world["clerk"])
+    routed = svc.submit_draft(world["client"]["id"], document, exempt_draft(document), world["clerk"])
     svc.approve(world["client"]["id"], document, world["approver"], post=True, expected_revision=routed["revision"])
     job = svc.post_job(world["client"]["id"], document)
     result = svc.erp_result(world["client"]["id"], document, ok=False, error="Tally company unavailable",
@@ -137,10 +147,10 @@ def test_unreconciled_draft_total_is_rejected(conn, world, document):
         svc.submit_draft(world["client"]["id"], document, draft(document, total=5000), world["clerk"])
 
 
-def test_approve_only_can_be_dispatched_later_idempotently(conn, world, document):
+def test_approve_only_can_be_dispatched_later_idempotently(conn, world, document, posting_on):
     svc = ControlService(conn)
-    svc.score(world["client"]["id"], document, canonical(document), world["clerk"])
-    routed = svc.submit_draft(world["client"]["id"], document, draft(document), world["clerk"])
+    svc.score(world["client"]["id"], document, exempt_invoice(document), world["clerk"])
+    routed = svc.submit_draft(world["client"]["id"], document, exempt_draft(document), world["clerk"])
     svc.approve(world["client"]["id"], document, world["approver"], post=False, expected_revision=routed["revision"])
     assert svc.post_job_count(world["client"]["id"], document) == 0
     svc.approve(world["client"]["id"], document, world["approver"], post=True, expected_revision=routed["revision"])
@@ -148,10 +158,10 @@ def test_approve_only_can_be_dispatched_later_idempotently(conn, world, document
     assert svc.post_job_count(world["client"]["id"], document) == 1
 
 
-def test_edit_after_approval_invalidates_approval_and_cancels_unclaimed_job(conn, world, document):
+def test_edit_after_approval_invalidates_approval_and_cancels_unclaimed_job(conn, world, document, posting_on):
     svc = ControlService(conn)
-    svc.score(world["client"]["id"], document, canonical(document), world["clerk"])
-    routed = svc.submit_draft(world["client"]["id"], document, draft(document), world["clerk"])
+    svc.score(world["client"]["id"], document, exempt_invoice(document), world["clerk"])
+    routed = svc.submit_draft(world["client"]["id"], document, exempt_draft(document), world["clerk"])
     svc.approve(world["client"]["id"], document, world["approver"], post=True, expected_revision=routed["revision"])
     edited = svc.edit_field(world["client"]["id"], document, world["clerk"], "party_ledger", "Changed",
                             expected_revision=routed["revision"])
@@ -164,10 +174,10 @@ def test_edit_after_approval_invalidates_approval_and_cancels_unclaimed_job(conn
         assert tasks == [{"status":"approved","draft_revision":1},{"status":"open","draft_revision":2}]
 
 
-def test_edit_is_blocked_once_post_job_is_claimed(conn, world, document, owner_dsn):
+def test_edit_is_blocked_once_post_job_is_claimed(conn, world, document, posting_on, owner_dsn):
     svc = ControlService(conn)
-    svc.score(world["client"]["id"], document, canonical(document), world["clerk"])
-    routed = svc.submit_draft(world["client"]["id"], document, draft(document), world["clerk"])
+    svc.score(world["client"]["id"], document, exempt_invoice(document), world["clerk"])
+    routed = svc.submit_draft(world["client"]["id"], document, exempt_draft(document), world["clerk"])
     svc.approve(world["client"]["id"], document, world["approver"], post=True, expected_revision=routed["revision"])
     with psycopg.connect(owner_dsn, autocommit=True) as owner:
         owner.execute("update jobs set state='running', claim_token=gen_random_uuid() where document_id=%s and queue='post'", (document,))
@@ -307,10 +317,10 @@ def test_boundary_rejects_mismatched_document_ids(conn, world, document):
         svc.submit_draft(world["client"]["id"], document, bad, world["clerk"])
 
 
-def test_erp_callback_rejects_stale_revision_and_persists_success(conn, world, document):
+def test_erp_callback_rejects_stale_revision_and_persists_success(conn, world, document, posting_on):
     svc = ControlService(conn)
-    svc.score(world["client"]["id"], document, canonical(document), world["clerk"])
-    routed = svc.submit_draft(world["client"]["id"], document, draft(document), world["clerk"])
+    svc.score(world["client"]["id"], document, exempt_invoice(document), world["clerk"])
+    routed = svc.submit_draft(world["client"]["id"], document, exempt_draft(document), world["clerk"])
     svc.approve(world["client"]["id"], document, world["approver"], post=True, expected_revision=1)
     job = svc.post_job(world["client"]["id"], document)
     with pytest.raises(Conflict, match="revision"):

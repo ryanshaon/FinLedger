@@ -137,6 +137,8 @@ def pair_erp_agent(conn: psycopg.Connection, client_id: UUID | str, erp_type: st
         """insert into erp_links (client_id, erp_type, company_name, agent_token_hash, paired_at)
            values (%s, %s, %s, %s, now())
            on conflict (client_id) do update set erp_type = excluded.erp_type, company_name = excluded.company_name,
+                  company_guid = null, posting_enabled_at = null, posting_enabled_by = null,
+                  posting_switch_history = erp_links.posting_switch_history || '[{"action": "pair_reset"}]'::jsonb,
                   agent_token_hash = excluded.agent_token_hash, paired_at = now()""",
         (client_id, erp_type, company_name, token_hash(token)))
     return token

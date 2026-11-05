@@ -5,13 +5,18 @@
     python -m finledger_tally sync     read ledger masters and open bills from the verified company (read-only) and send
                                        them to person2 (``POST /agent/masters``, ``POST /agent/open-bills``); exit 0
                                        only if every snapshot was accepted. Run it on a schedule (Task Scheduler).
+    python -m finledger_tally run-once
+                                       Phase 1 only: one post job from the platform, in this console, with a typed
+                                       confirmation of the exact request. Exit 1 unless this process has posting on,
+                                       the disposable company's GUID and name, and no offline XML.
     python -m finledger_tally preflight FILE.json
                                        the READ-ONLY live-Import preflight (docs/LIVE_IMPORT_TEST_PROCEDURE.md); exit 0
                                        only if every check passes. It never sends an Import: the CLI has no execute or
-                                       post command and no flag that would add one.
+                                       post command and no flag that would add one. ``run-once`` is the only
+                                       command that can send an Import.
 
-There is deliberately no "run" command: the platform has no job-pickup route yet (docs/CONTRACT_GAPS.md #10), and the
-agent must not run against an invented queue. ``AgentHost.run`` is the entry point a service will call once it exists.
+There is deliberately no "run" command: Phase 1 allows no unattended posting, so nothing here loops or runs as a
+service. ``AgentHost.run`` stays the entry point for a later phase.
 Exit codes: 0 ok, 1 configuration invalid, 2 not ready (see the printed status), 3 unexpected internal error
 (only the exception type is printed), 64 usage. ``health`` is ok only when the company is verified AND its ledger
 masters were read.
@@ -70,8 +75,9 @@ def main(argv: Sequence[str] | None = None, env: Mapping[str, str] | None = None
         print(json.dumps(body, sort_keys=True), file=out)
         return code
 
-    if not (len(argv) == 1 and argv[0] in ("config", "health", "sync") or len(argv) == 2 and argv[0] == "preflight"):
-        print("usage: python -m finledger_tally {config|health|sync|preflight FILE.json}", file=out)
+    if not (len(argv) == 1 and argv[0] in ("config", "health", "sync", "run-once")
+            or len(argv) == 2 and argv[0] == "preflight"):
+        print("usage: python -m finledger_tally {config|health|sync|run-once|preflight FILE.json}", file=out)
         return EXIT_USAGE
     try:
         settings = AgentSettings.from_env(env)
@@ -90,6 +96,8 @@ def main(argv: Sequence[str] | None = None, env: Mapping[str, str] | None = None
         return _preflight(argv[1], settings, env, emit)
     if argv[0] == "sync":
         return _sync(settings, env, emit)
+    if argv[0] == "run-once":
+        return _run_once(settings, env, emit)
     try:
         report = TallyConnector(settings).health()
     except Exception as exc:  # noqa: BLE001 - never a traceback with request text; never "ok"
@@ -160,6 +168,35 @@ def _sync(settings: AgentSettings, env: Mapping[str, str] | None, emit) -> int:
     reason = "ok" if sent == len(results) else "partial" if sent else "failed"
     return emit(EXIT_OK if reason == "ok" else EXIT_NOT_READY, {"ok": reason == "ok", "reason": reason,
                                                                 "results": results})
+
+
+def _run_once(settings: AgentSettings, env: Mapping[str, str] | None, emit) -> int:
+    """Phase 1's one job. Imported here so that ``config``, ``health``, ``sync`` and ``preflight`` never load it."""
+    from .platform_client import PlatformClient
+    from .run_once import ask_with_timeout, run_once, run_once_problems
+
+    env = os.environ if env is None else env
+    target = _platform_target(env)
+    problems = run_once_problems(settings, env)
+    if target is None:
+        problems.append("platform_not_configured")
+    if not settings.client_id:
+        problems.append("not_paired")
+    if problems:
+        return emit(EXIT_CONFIG, {"ok": False, "reason": "invalid_configuration", "problems": problems})
+
+    def ask(phrase: str) -> str | None:
+        print(f"Type this exact phrase within 2 minutes to send one Import:\n  {phrase}", flush=True)
+        return ask_with_timeout(input)
+
+    client = PlatformClient(target[0], target[1], client_id=settings.client_id, timeout=settings.timeout)
+    try:
+        result = run_once(settings, client, disposable_guid=env["FINLEDGER_TALLY_LIVE_TEST_COMPANY_GUID"], ask=ask,
+                          say=lambda text: print(text, flush=True))
+    except Exception as exc:  # noqa: BLE001 - never a traceback; the journal and the claim file keep the truth
+        return emit(EXIT_INTERNAL, {"ok": False, "reason": "internal_error",
+                                    "error": f"unexpected {type(exc).__name__}; do not retry until it is checked"})
+    return emit(EXIT_OK if result["ok"] else EXIT_NOT_READY, result)
 
 
 def _preflight(path: str, settings: AgentSettings, env: Mapping[str, str] | None, emit) -> int:

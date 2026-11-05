@@ -1,0 +1,3 @@
+# Exact bytes matter here: tests compare golden files and request templates byte for byte.
+person4_tally/tests/** -text
+person4_tally/tally_identity_probe/** -text

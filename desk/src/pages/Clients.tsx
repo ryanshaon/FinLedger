@@ -108,7 +108,7 @@ export function BillTable({ rows, onNavigate }: { rows: LiveBill[]; onNavigate: 
               <td className={bodyCell}>{bill.vendor_name || "Unresolved vendor"}</td>
               <td className={`${bodyCell} tabular-nums text-muted-foreground`}>{formatDay(bill.invoice_date)}</td>
               <td className={`${bodyCell} text-right tabular-nums`}>{rupees(bill.total)}</td>
-              <td className={bodyCell}><Badge tone={statusTone(bill.state_label)}>{bill.state_label}</Badge></td>
+              <td className={bodyCell}><Badge tone={statusTone(bill.state_label)}>{bill.state_label}</Badge>{bill.status_reason ? <span className="mt-1 block text-xs text-muted-foreground">{bill.status_reason.startsWith("outcome_uncertain") ? "Uncertain: do not re-enter this bill." : bill.status_reason}</span> : null}</td>
             </tr>
           );
         })}

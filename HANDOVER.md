@@ -454,7 +454,8 @@ head's CI and integration state; merge only with green checks on that exact head
 **Next work:** finish exact-head CI/integration for PR #54 if still open, then existing owner-gated runtime
 login, Auth, storage, scanner, hosting and live-provider proofs. Do not repeat completed work or activate/buy
 resources without recorded decisions. This is local/mock verification, not production readiness. The primary
-MVP excludes email, finished every-bill TDS, PO/GRN/three-way screens, outstanding bills, Tally posting, bank
+MVP excludes email, finished every-bill TDS, PO/GRN/three-way screens, outstanding bills, client Tally posting (Phase 1
+tests posting to one disposable company only; see `README.md`), bank
 matching, payments and GST filing. Preserve future connector code. See [release evidence](docs/RELEASE_EVIDENCE.md).
 
 **2026-11-02 replacement Supabase restored:** Branch `restore/new-supabase-finledger`, PR #53.

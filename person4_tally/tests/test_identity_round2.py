@@ -214,7 +214,7 @@ def test_marker_like_matches_exactly_what_the_old_pattern_matched(text):
     "finledger" + " " * 200_000 + "x",
     "finledger" + " " * 200_000 + ":" + " " * 200_000 + "x",
     "finledger document" + " " * 200_000 + "x",
-])
+], ids=["one_run", "two_runs", "after_document"])  # the whole text as an id overflows an environment variable on Windows
 def test_marker_like_is_linear_on_long_whitespace_runs(text):
     started = time.perf_counter()
     assert _MARKER_LIKE.search(text) is None

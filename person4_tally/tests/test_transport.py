@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import http.server
+import re
 import socket
 import threading
 from pathlib import Path
@@ -151,7 +152,15 @@ class _ChunkServer:
             conn, _ = self.sock.accept()
         except OSError:
             return
-        conn.recv(65536)
+        # Read the whole request first. Closing with unread bytes resets the connection on Windows, and the client then
+        # sees that reset instead of the reply this test is about.
+        request = b""
+        while b"\r\n\r\n" not in request:
+            request += conn.recv(65536)
+        head, _, rest = request.partition(b"\r\n\r\n")
+        length = int(re.search(rb"content-length: *(\d+)", head, re.IGNORECASE).group(1))
+        while len(rest) < length:
+            rest += conn.recv(65536)
         conn.sendall(b"HTTP/1.0 200 OK\r\nContent-Type: text/xml\r\n\r\n" + self.body)
         conn.close()
 

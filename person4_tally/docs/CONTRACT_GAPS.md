@@ -12,17 +12,17 @@ platform component · E = needs a real Tally capture · F = needs a product or a
 
 | # | Gap | Owner | Status | Evidence |
 |---|---|---|---|---|
-| 1 | No uncertain posting state on the attempt | B | **open**; P4 compensates locally | `test_gap1_…` |
-| 2 | No request/response evidence on the attempt | B | **open**; evidence in the local journal only | `test_gap2_…` |
-| 3 | `erp_links` has no company GUID | B | **open**; GUID from config | `test_gap3_…` |
+| 1 | Uncertain posting state on the attempt | B | **done** (migration 016, result route) | `test_gap1_…` |
+| 2 | Request/response digests on the attempt | B | **done** (digests only; the bytes stay in the local journal) | `test_gap2_…` |
+| 3 | Company GUID on `erp_links` | B | **done**; set by the owner when enabling posting, cleared by re-pairing | `test_gap3_…` |
 | 4 | Post job lacks invoice total and vendor GSTIN | C | **open**; optional P4 parameters | `test_gap4_…` |
 | 5 | Amounts are floats in shared schemas | B/C | **partly fixed upstream** (P3 boundary is `Decimal`); shared schema and P2 `OpenBill` still float | `test_gap5_…`, `test_gap16_…` |
 | 6 | GST tax lines untyped | C + F | **open**; GST refused | `test_gaps_6_7_…` |
 | 7 | TDS untyped | C + F | **open**; TDS refused | `test_gaps_6_7_…` |
 | 8 | Debit/credit notes cannot name original invoice or issuer | C + F | **open**; notes refused | `test_gap8_…` |
 | 9 | Due date vs Tally credit period | F + E | **open**; due date never invented | `test_gap16_…` |
-| 10 | No agent route to claim post jobs / report results | B | **open**; interfaces only, no `run` command | `test_gap10_…` |
-| 11 | `claim_job` re-leases an expired post job | B | **partly fixed upstream** (`claim_token` fences a stale `finish_job`); re-lease still happens | `test_gap11_…` |
+| 10 | Agent routes to claim post jobs / report results | B | **done** for Phase 1; `run-once` only, still no `run` command | `test_gap10_…` |
+| 11 | Expired post lease | B | **done**: `claim_post_job` parks it as `needs_reconciliation`, and requeue refuses post jobs | `test_gap11_…` |
 | 12 | No attachment Tally can store | D + E | **open**; narration marker only | — |
 | 13 | P3 voucher types differ from the shared enum | C | **open**; non-purchase refused | `test_gap13_…` |
 | 14 | Approval for the exact job | A | **done in P4** (now also document, client and supersession) | `test_release_boundary.py`, `test_p3_integration.py` |

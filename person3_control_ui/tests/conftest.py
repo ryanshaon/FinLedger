@@ -63,7 +63,7 @@ def app_dsn(owner_dsn):
     with psycopg.connect(owner_dsn, autocommit=True) as c:
         c.execute("drop role if exists fl_control")
         c.execute(
-            f"create role fl_control login password '{APP_PASSWORD}' in role finledger_app, finledger_worker_map"
+            f"create role fl_control login password '{APP_PASSWORD}' in role finledger_app, finledger_worker_map, finledger_worker_post"
         )
     info = conninfo_to_dict(owner_dsn); info.update(user="fl_control", password=APP_PASSWORD)
     return make_conninfo(**info)
@@ -114,3 +114,14 @@ def document(conn, world):
                      (did, cid, f"{cid}/2026/10/{did}/raw.pdf", hashlib.sha256(b"x").hexdigest()))
     return did
 
+
+
+@pytest.fixture
+def posting_on(conn, world):
+    """The client's posting switch on, as the owner would turn it on. Bills still need a human approval and no tax."""
+    cid = world["client"]["id"]
+    with tenant(conn, cid):
+        conn.execute("""insert into erp_links(client_id,erp_type,company_name,company_guid,posting_enabled_at,posting_enabled_by)
+                        values (%s,'tally','FinLedger Live Test 1','7a5f42d4-ec1d-4aab-9992-e2e217bcb773',now(),%s)""",
+                     (cid, world["admin"]))
+    return cid

@@ -4,6 +4,15 @@ import argparse, os
 from .api import create_app
 
 
+def dev_login_from_env():
+    """Development-only named test users. Refused outside local development; it is not real sign-in."""
+    from .dev_login import DevSessions, dev_login_allowed, parse_users
+    if not dev_login_allowed(os.environ):
+        return None
+    return DevSessions(parse_users(os.environ["FINLEDGER_DEV_LOGIN_USERS"]),
+                       os.environ["FINLEDGER_SIGNING_SECRET"].encode())
+
+
 def browser_sessions_from_env():
     from finledger_platform.auth_gateway import SupabaseAuthClient
     from finledger_platform.browser_sessions import BrowserSessions
@@ -33,6 +42,9 @@ def staff_invitations_from_env():
 def main():
     p=argparse.ArgumentParser(prog="finledger-control"); p.add_argument("--host",default="127.0.0.1"); p.add_argument("--port",type=int,default=8770)
     args=p.parse_args(); dsn=os.environ.get("FINLEDGER_DATABASE_URL")
+    dev_sessions=dev_login_from_env()
+    if dev_sessions is not None and args.host not in ("127.0.0.1","::1","localhost"):
+        raise SystemExit("the development login only runs on this computer's loopback address")
     if not dsn: raise SystemExit("FINLEDGER_DATABASE_URL is required")
     # Same pool as Person 2: refuses superuser/BYPASSRLS/owner roles so RLS always applies.
     from finledger_platform.db import make_pool
@@ -51,7 +63,7 @@ def main():
                          os.environ.get("FINLEDGER_APP_BASE_URL","http://localhost:8000"))
     import uvicorn
     uvicorn.run(create_app(pool,source_url=lambda path,name: store.signed_url(path,300,name),
-                           browser_sessions=browser_sessions_from_env(),
+                           browser_sessions=dev_sessions or browser_sessions_from_env(),
                            staff_invitations=staff_invitations_from_env(),
                            local_files=store if kind != "s3" else None, document_store=store,
                            max_upload_bytes=int(os.environ.get("FINLEDGER_MAX_UPLOAD_BYTES", str(25 * 1024 * 1024)))),
