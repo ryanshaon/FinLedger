@@ -5,6 +5,7 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
+from psycopg.errors import LockNotAvailable
 from psycopg.types.json import Jsonb
 from pydantic import ValidationError
 
@@ -196,13 +197,17 @@ class ControlService:
         allowed = {"party_ledger", "narration", "bill_wise.ref", "bill_wise.due_date"}
         if field not in allowed: raise Forbidden("field is not editable here")
         with self._tx(client_id):
-            row = self.conn.execute("""select v.payload,v.revision,d.status,
-                exists(select 1 from jobs j where j.document_id=d.id and j.queue='post' and j.state in ('running','done')) active_post
+            row = self.conn.execute("""select v.payload,v.revision,d.status
                 from voucher_drafts v join documents d on d.id=v.document_id where v.document_id=%s for update of v,d""", (document_id,)).fetchone()
             if not row: raise NotFound("draft not found")
             if row["status"] in {"posted","reconciled","closed","scheduled","paid"}: raise Conflict(f"cannot edit {row['status']} document")
-            if row["active_post"]: raise Conflict("cannot edit while an active post attempt exists")
             if row["revision"] != expected_revision: raise Conflict("draft changed; refresh before saving")
+            try:
+                active_post = self.conn.execute('select lock_post_jobs_for_edit(%s) as active', (document_id,)).fetchone()['active']
+            except LockNotAvailable:
+                raise Conflict('post job is busy; try again') from None
+            if active_post:
+                raise Conflict("cannot edit while an active post attempt exists")
             payload = row["payload"]; target, leaf = (payload, field)
             if "." in field:
                 head, leaf = field.split(".",1); target = payload.setdefault(head,{})
@@ -210,7 +215,7 @@ class ControlService:
             self.conn.execute("update voucher_drafts set payload=%s,revision=%s,updated_at=now() where document_id=%s", (Jsonb(payload), revision, document_id))
             if row["status"] == "approved":
                 self.conn.execute("update approvals set superseded_at=now(),superseded_by_revision=%s where document_id=%s and superseded_at is null", (revision,document_id))
-                self.conn.execute("update jobs set state='cancelled',updated_at=now() where document_id=%s and queue='post' and state='queued'", (document_id,))
+                self.conn.execute('select cancel_unfinished_post_jobs(%s)', (document_id,))
                 self.conn.execute("insert into review_tasks(client_id,document_id,risk_band,reason,draft_revision) select %s,%s,band,'material edit after approval',%s from risk_assessments where document_id=%s order by id desc limit 1", (client_id,document_id,revision,document_id))
                 self.conn.execute("update documents set status='in_review',updated_at=now() where id=%s", (document_id,))
                 self._event(client_id,document_id,"approved","in_review","approval_invalidated",actor_id,{"revision":revision})

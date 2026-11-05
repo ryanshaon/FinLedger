@@ -2,6 +2,7 @@
 
 import hashlib
 import uuid
+import psycopg
 
 from fastapi.testclient import TestClient
 
@@ -126,8 +127,9 @@ def test_edit_and_reject_forms_keep_maker_checker(pool, conn, world, document):
                   "select count(*) as n from jobs where document_id=%s and queue='post'", (document,)) == 0
 
 
-def test_inbox_shows_queued_failed_budget_and_statement_states(pool, conn, world):
+def test_inbox_shows_queued_failed_budget_and_statement_states(pool, conn, world, owner_dsn):
     client_id = world["client"]["id"]
+    jobs = []
     specs = [
         ("received", "invoice", None, "queued", "queued-bill.pdf"),
         ("received", "invoice", None, "dead", "failed-bill.pdf"),
@@ -146,11 +148,10 @@ def test_inbox_shows_queued_failed_budget_and_statement_states(pool, conn, world
                  hashlib.sha256(filename.encode()).hexdigest(), status, reason, document_class),
             )
             if extract_state:
-                conn.execute(
-                    """insert into jobs(client_id,document_id,queue,state,payload)
-                       values (%s,%s,'extract',%s,'{}'::jsonb)""",
-                    (client_id, document_id, extract_state),
-                )
+                jobs.append((client_id, document_id, extract_state))
+    with psycopg.connect(owner_dsn, autocommit=True) as owner:
+        for job in jobs:
+            owner.execute("insert into jobs(client_id,document_id,queue,state,payload) values (%s,%s,'extract',%s,'{}'::jsonb)", job)
     client, headers = _client(pool, world["approver_token"])
     new = client.get(f"/clients/{client_id}/review?queue=new", headers=headers)
     assert new.status_code == 200
