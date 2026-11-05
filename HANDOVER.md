@@ -260,6 +260,16 @@ every completed or WIP change. No uncommitted implementation may remain on the P
 
 ## Latest status
 
+**2026-11-05 — synthetic hosted map proof preparation:** Branch
+`test/hosted-map-retrieval-proof` adds fixed, operator-only synthetic seed/cleanup SQL and
+a real `process_map` test across two client contexts. It preclaims only fixture jobs (no shared
+queue claim), checks that a correction wins only for its own client and that no post job is
+created. Local PostgreSQL: **4 passed**, including cleanup after an injected mapping failure,
+refusal to clean up unexpected documents and rejection of an incorrect database target.
+Hosted execution, exact-head CI and independent review are pending. A temporary development-mode
+mock is for synthetic fixture invoices only; do not route real invoices to it. Seed commits rows
+until cleanup and advances sequences. No hosted fixtures have been inserted yet.
+
 **2026-11-05 — map login enabled:** Owner privately set the `fl_map` password. Verified only
 that a SCRAM password exists (no password or hash read/displayed), then applied the committed
 `recovery/enable_fl_map.sql` on `smnfnnwmasnsuuwrboge`. Verified login enabled, no superuser,
