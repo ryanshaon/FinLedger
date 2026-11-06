@@ -46,7 +46,8 @@ def test_migrations_revoke_data_api_access_and_secure_operational_tables(owner_d
                         "select has_table_privilege(%s, %s, 'SELECT')", (role, f"public.{table}")
                     ).fetchone()[0]
                     assert not allowed, f"{role} can read {table}"
-                for function in ("auth_user(bytea)", "claim_job(text,integer)"):
+                for function in ("auth_user(bytea)", "claim_job(text,integer)",
+                                 "lock_post_jobs_for_edit(uuid)", "cancel_unfinished_post_jobs(uuid)"):
                     allowed = conn.execute(
                         "select has_function_privilege(%s, %s, 'EXECUTE')",
                         (role, f"public.{function}"),

@@ -1,4 +1,6 @@
 import hashlib
+import threading
+import time
 import uuid
 from datetime import date
 
@@ -8,6 +10,7 @@ from psycopg.rows import dict_row
 
 from finledger_control.service import ControlService, Conflict, Forbidden
 from finledger_platform.db import tenant
+from finledger_platform.queue import claim
 
 
 def canonical(document_id, **overrides):
@@ -161,15 +164,136 @@ def test_edit_after_approval_invalidates_approval_and_cancels_unclaimed_job(conn
         assert tasks == [{"status":"approved","draft_revision":1},{"status":"open","draft_revision":2}]
 
 
-def test_edit_is_blocked_once_post_job_is_claimed(conn, world, document):
+def test_edit_is_blocked_once_post_job_is_claimed(conn, world, document, owner_dsn):
     svc = ControlService(conn)
     svc.score(world["client"]["id"], document, canonical(document), world["clerk"])
     routed = svc.submit_draft(world["client"]["id"], document, draft(document), world["clerk"])
     svc.approve(world["client"]["id"], document, world["approver"], post=True, expected_revision=routed["revision"])
-    with svc._tx(world["client"]["id"]):
-        conn.execute("update jobs set state='running', claim_token=gen_random_uuid() where document_id=%s and queue='post'", (document,))
+    with psycopg.connect(owner_dsn, autocommit=True) as owner:
+        owner.execute("update jobs set state='running', claim_token=gen_random_uuid() where document_id=%s and queue='post'", (document,))
     with pytest.raises(Conflict, match="active post"):
         svc.edit_field(world["client"]["id"], document, world["clerk"], "party_ledger", "Changed", expected_revision=1)
+
+
+def test_edit_waits_for_concurrent_claim_and_preserves_approval(conn, pool, world, document, owner_dsn):
+    svc = ControlService(conn)
+    svc.score(world['client']['id'], document, canonical(document), world['clerk'])
+    routed = svc.submit_draft(world['client']['id'], document, draft(document), world['clerk'])
+    svc.approve(world['client']['id'], document, world['approver'], post=True, expected_revision=routed['revision'])
+    started = threading.Event()
+    result = {}
+
+    def edit():
+        try:
+            with pool.connection() as editor:
+                result['pid'] = editor.info.backend_pid
+                started.set()
+                ControlService(editor).edit_field(world['client']['id'], document, world['clerk'], 'party_ledger', 'Changed', expected_revision=1)
+                result['success'] = True
+        except Exception as exc:
+            result['error'] = exc
+
+    with psycopg.connect(owner_dsn) as claimant, psycopg.connect(owner_dsn, autocommit=True) as observer:
+        claimant.execute("update jobs set state='running', claim_token=gen_random_uuid() where document_id=%s and queue='post'", (document,))
+        thread = threading.Thread(target=edit)
+        thread.start()
+        try:
+            assert started.wait(5)
+            deadline = time.monotonic() + 5
+            while time.monotonic() < deadline:
+                waiting = observer.execute('select wait_event_type from pg_stat_activity where pid=%s', (result['pid'],)).fetchone()
+                if waiting and waiting[0] == 'Lock':
+                    break
+                time.sleep(0.05)
+            else:
+                pytest.fail('edit did not wait for the claim lock')
+        finally:
+            claimant.commit()
+            thread.join(timeout=10)
+        assert not thread.is_alive()
+    assert isinstance(result.get('error'), Conflict)
+    with svc._tx(world['client']['id']):
+        row = conn.execute('select d.status,v.revision from documents d join voucher_drafts v on v.document_id=d.id where d.id=%s', (document,)).fetchone()
+        assert row == {'status': 'approved', 'revision': 1}
+        assert conn.execute('select count(*) as n from approvals where document_id=%s and superseded_at is null', (document,)).fetchone()['n'] == 1
+
+
+def test_edit_times_out_safely_when_post_job_stays_locked(conn, world, document, owner_dsn):
+    svc = ControlService(conn)
+    svc.score(world['client']['id'], document, canonical(document), world['clerk'])
+    routed = svc.submit_draft(world['client']['id'], document, draft(document), world['clerk'])
+    svc.approve(world['client']['id'], document, world['approver'], post=True, expected_revision=routed['revision'])
+    with psycopg.connect(owner_dsn) as claimant:
+        claimant.execute("update jobs set state='running', claim_token=gen_random_uuid() where document_id=%s and queue='post'", (document,))
+        with pytest.raises(Conflict, match='post job is busy; try again'):
+            svc.edit_field(world['client']['id'], document, world['clerk'], 'party_ledger', 'Changed', expected_revision=1)
+        claimant.rollback()
+    with svc._tx(world['client']['id']):
+        row = conn.execute('select d.status,v.revision from documents d join voucher_drafts v on v.document_id=d.id where d.id=%s', (document,)).fetchone()
+        assert row == {'status': 'approved', 'revision': 1}
+
+
+def test_dead_post_requeue_waits_for_edit_and_cannot_revive_it(conn, pool, world, document, owner_dsn):
+    svc = ControlService(conn)
+    svc.score(world['client']['id'], document, canonical(document), world['clerk'])
+    routed = svc.submit_draft(world['client']['id'], document, draft(document), world['clerk'])
+    svc.approve(world['client']['id'], document, world['approver'], post=True, expected_revision=routed['revision'])
+    job = svc.post_job(world['client']['id'], document)['id']
+    started = threading.Event()
+    result = {}
+
+    def requeue():
+        try:
+            with pool.connection() as worker:
+                result['pid'] = worker.info.backend_pid
+                started.set()
+                result['requeued'] = worker.execute('select requeue_dead_job(%s) as ok', (job,)).fetchone()['ok']
+        except Exception as exc:
+            result['error'] = exc
+
+    with psycopg.connect(owner_dsn, autocommit=True) as owner:
+        owner.execute('grant finledger_queue_ops to fl_control')
+        owner.execute("update jobs set state='dead' where id=%s", (job,))
+        thread = threading.Thread(target=requeue)
+        try:
+            with svc._tx(world['client']['id']):
+                assert not conn.execute('select lock_post_jobs_for_edit(%s) as active', (document,)).fetchone()['active']
+                assert conn.execute('select cancel_unfinished_post_jobs(%s) as n', (document,)).fetchone()['n'] == 1
+                thread.start()
+                assert started.wait(5)
+                deadline = time.monotonic() + 5
+                while time.monotonic() < deadline:
+                    waiting = owner.execute('select wait_event_type from pg_stat_activity where pid=%s', (result['pid'],)).fetchone()
+                    if waiting and waiting[0] == 'Lock':
+                        break
+                    time.sleep(0.05)
+                else:
+                    pytest.fail('requeue did not wait for the edit lock')
+            thread.join(timeout=10)
+            assert not thread.is_alive() and result.get('requeued') is False and 'error' not in result
+            assert owner.execute('select state from jobs where id=%s', (job,)).fetchone()[0] == 'cancelled'
+        finally:
+            thread.join(timeout=10) if thread.ident else None
+            owner.execute('revoke finledger_queue_ops from fl_control')
+
+
+def test_worker_skips_post_job_locked_by_editor(conn, world, document, owner_dsn, app_dsn):
+    svc = ControlService(conn)
+    svc.score(world['client']['id'], document, canonical(document), world['clerk'])
+    routed = svc.submit_draft(world['client']['id'], document, draft(document), world['clerk'])
+    svc.approve(world['client']['id'], document, world['approver'], post=True, expected_revision=routed['revision'])
+    with psycopg.connect(owner_dsn, autocommit=True) as owner:
+        owner.execute('grant finledger_worker_post to fl_control')
+        try:
+            with psycopg.connect(app_dsn, autocommit=True, row_factory=dict_row) as worker:
+                worker.execute("set statement_timeout='3s'")
+                with svc._tx(world['client']['id']):
+                    assert not conn.execute('select lock_post_jobs_for_edit(%s) as active', (document,)).fetchone()['active']
+                    assert conn.execute('select cancel_unfinished_post_jobs(%s) as n', (document,)).fetchone()['n'] == 1
+                    assert claim(worker, 'post') is None
+            assert owner.execute("select state from jobs where document_id=%s and queue='post'", (document,)).fetchone()[0] == 'cancelled'
+        finally:
+            owner.execute('revoke finledger_worker_post from fl_control')
 
 
 def test_boundary_rejects_mismatched_document_ids(conn, world, document):

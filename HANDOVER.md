@@ -260,6 +260,19 @@ every completed or WIP change. No uncommitted implementation may remain on the P
 
 ## Latest status
 
+**2026-11-06 — queue write boundary and edit race:** Branch `hardening/jobs-write-boundary`
+prepares migration 016: remove direct app UPDATE/DELETE on jobs, restrict INSERT to producer
+columns, and use tenant-checked definer functions to lock post jobs and cancel queued/dead
+attempts during edits. Locks include dead jobs so a concurrent requeue cannot revive an old
+approval; a 3-second lock timeout becomes a retryable conflict. Existing hosted queue-prepare
+SQL is historical after 016; the mapping fixture no longer uses it. API roles are denied the
+new functions. Before the final timeout change full local suites passed **389 platform / 121
+control**; after it the complete service file passed **21 tests**. Final full-suite and CI
+results must be checked separately. Claude reviewed the design; no Person 4 edits, hosted SQL,
+or customer data changes in this batch. **Residual risk:** app SQL can still enqueue a forged
+queued post job; no user-facing exploit has been demonstrated. Do not claim job forgery closed.
+Migration 016 has not been applied to Supabase; apply only after exact-head green CI and review.
+
 **2026-11-06 — hosted synthetic queue proof passed:** PR #64 merged with green CI. On
 `smnfnnwmasnsuuwrboge`, the restricted `fl_map` login claimed and finished its fixed synthetic
 map job within a forced rollback; a wrong token and an extract-queue claim were denied, and

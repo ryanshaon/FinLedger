@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 import uuid
+import psycopg
 
 from extract.extract_worker import ExtractWorker
 from finledger_control.service import ControlService
@@ -58,7 +59,7 @@ def _chunks(conn, client_id):
         return PostgresIndexer(conn).get_namespace_chunks(str(client_id))
 
 
-def test_map_trace_lists_only_this_client_and_extract_has_no_chunks(conn, pool, world):
+def test_map_trace_lists_only_this_client_and_extract_has_no_chunks(conn, pool, world, owner_dsn):
     client_a = world["client"]["id"]
     with firm(conn, world["client"]["firm_id"]):
         other = create_client(conn, "Other Steel", inbound_slug="other-steel")
@@ -119,8 +120,8 @@ def test_map_trace_lists_only_this_client_and_extract_has_no_chunks(conn, pool, 
         assert any(chunk["chunk_id"] == "memory:a-marker" for chunk in _chunks(restarted, client_a))
         assert all(chunk["chunk_id"] != "memory:b-marker" for chunk in _chunks(restarted, client_a))
 
-    with tenant(conn, client_a):
-        conn.execute(
+    with psycopg.connect(owner_dsn, autocommit=True) as owner:
+        owner.execute(
             "update jobs set state = 'queued', claim_token = null, run_after = now() where queue = 'map' and document_id = %s",
             (doc_id,),
         )
