@@ -16,6 +16,8 @@ begin
     if exists (select 1 from pg_roles where rolname = role_name
                and (rolcanlogin or rolsuper or rolbypassrls or rolcreaterole or rolcreatedb or rolreplication))
        or not pg_has_role(role_name, 'finledger_app', 'MEMBER')
+       or has_table_privilege(role_name, 'public.jobs', 'UPDATE,DELETE')
+       or has_schema_privilege(role_name, 'public', 'CREATE')
        or pg_has_role(role_name, (select relowner from pg_class where oid='public.documents'::regclass), 'MEMBER') then
       raise exception 'runtime role preflight failed: %', role_name;
     end if;
