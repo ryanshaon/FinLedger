@@ -4,6 +4,28 @@ This file is the single baton between AI agents working on FinLedger. **Read all
 Whoever is working updates the "Latest status" section and pushes it before stopping. It replaces the old
 `HANDOVER_CLAUDE.md`.
 
+## Current handover for Harshith
+
+The 2026-11-07 status below supersedes older checklist entries that say storage was never tested,
+migration 016 is missing, or no runtime role exists. The current Supabase project is Startups / FinLedger,
+`smnfnnwmasnsuuwrboge` (Mumbai). App migrations 001–016 are recorded; do not replay them. Its private
+document bucket passed synthetic signed upload/read/download, unsigned denial and deletion. The restricted
+`fl_map` login passed synthetic hosted mapping and tenant isolation. These are staging checks, not a real
+invoice, full application, deployment or Tally posting proof.
+
+The `fl_api`, `fl_control`, `fl_ingest`, `fl_score` and `fl_outbox` roles exist with LOGIN disabled. Ryan must
+choose their passwords privately before activation and session-pooler testing. Do not share credentials in
+chat or Git. Hosted ClamAV and email proofs, app/worker hosting, real sign-in, deployment and rollback tests
+remain open. Hosting provider and budget are undecided; Ryan prefers a free option for testing. Do not claim
+the hosted app is ready. Keep posting disabled until the integration is reviewed and tested.
+
+Harshith and his assistants are authorized to edit `person4_tally/` for his work. Continue local synthetic
+development and tests without hosted credentials. The older `phase1-tally-posting` branch contains a
+conflicting 016. A newer branch, `origin/claude/project-thread-wlgw4v` at `8a4f26b`, is based on main and
+contains `017_phase1_posting.sql` plus further claim-related changes. Inspect the latest branch and CI before
+deciding what remains; neither this note nor the prior source review verifies those new changes. Do not apply
+017 to Supabase until the branch is reviewed, tested, committed and approved through the normal workflow.
+
 ---
 
 ## 🔁 Hand-back protocol (MANDATORY, read first)
@@ -260,6 +282,11 @@ every completed or WIP change. No uncommitted implementation may remain on the P
 ---
 
 ## Latest status
+
+**2026-11-07 — Harshith handover clarification:** Added the current Supabase, runtime credential and
+local Tally-work status above. Fetched `origin/claude/project-thread-wlgw4v` at `8a4f26b` and confirmed
+that it contains a 017 posting migration and a subsequent claim-related commit; their correctness and CI
+were not reviewed. Documentation only: no application tests, Supabase changes or secret reads.
 
 **2026-11-07 — restricted runtime roles provisioned:** PR #68 merged after green test, image and
 desk CI. Applied the committed `recovery/provision_runtime_roles.sql` to project
