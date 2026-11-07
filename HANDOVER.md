@@ -260,6 +260,17 @@ every completed or WIP change. No uncommitted implementation may remain on the P
 
 ## Latest status
 
+**2026-11-07 — restricted runtime roles provisioned:** PR #68 merged after green test, image and
+desk CI. Applied the committed `recovery/provision_runtime_roles.sql` to project
+`smnfnnwmasnsuuwrboge`. `fl_api`, `fl_control`, `fl_ingest`, `fl_score` and `fl_outbox` exist with
+NOLOGIN, no superuser/RLS-bypass/create-role/create-db privileges, `finledger_app` membership, and
+only their assigned ingest/score worker membership. Verified they cannot UPDATE/DELETE `jobs` and do
+not inherit the post worker role. Security advisor reported the same three intentional INFOs.
+Local isolated role test: **1 passed**. No passwords, login activation, runtime deployment, Tally
+posting, customer data or Person 4 edits. The owner must choose each password privately and the
+appropriate role must be separately enabled and tested through the session pooler before use. The
+extract worker/provider and posting integration remain gated; do not replay the role creation script.
+
 **2026-11-07 — runtime-role preparation:** Branch `setup/restricted-runtime-roles` prepares an
 operator-only script for disabled `fl_api`, `fl_control`, `fl_ingest`, `fl_score` and `fl_outbox`
 roles, with per-process worker memberships. The existing `fl_map` is untouched. `fl_extract` and
