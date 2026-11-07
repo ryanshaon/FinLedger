@@ -260,6 +260,18 @@ every completed or WIP change. No uncommitted implementation may remain on the P
 
 ## Latest status
 
+**2026-11-07 — hosted queue boundary and Tally integration review:** On replacement project
+`smnfnnwmasnsuuwrboge`, applied the committed `016_jobs_write_boundary.sql` from main after PR #66
+passed test, image and desk CI. The Supabase migration also records the filename in the app migration
+tracker. Read-only verification confirms both new functions exist and `finledger_app` no longer has
+direct UPDATE or DELETE on `jobs`. The committed `scripts/hosted_map_proof.py` then passed synthetic
+mapping, correction reuse, tenant isolation, no-post and cleanup. No real Tally, invoice or provider
+was used. The separate `origin/phase1-tally-posting` branch at `63c957e` is not integrated: it predates
+main's 016 and has its own 016. Its release/reconciliation paths use direct job UPDATE, which now
+fails with main's restricted grants. Review also identified result reports without a live matching
+claim, an edit/claim race, and policy-approved bills missing a human approval. Resolve and test these
+before live posting or applying that branch's migration. No Person 4 files were edited.
+
 **2026-11-06 — queue write boundary and edit race:** Branch `hardening/jobs-write-boundary`
 prepares migration 016: remove direct app UPDATE/DELETE on jobs, restrict INSERT to producer
 columns, and use tenant-checked definer functions to lock post jobs and cancel queued/dead
