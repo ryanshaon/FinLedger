@@ -4,8 +4,18 @@ Updated 2026-10-24 after [PR #41](https://github.com/ryanshaon/FinLedger/pull/41
 [#47](https://github.com/ryanshaon/FinLedger/pull/47) and Ruthvik's post-Harshith changes merged into main (`4bbf722`).
 This is your only active assignment file.
 
+**2026-11-07 — Tally integration coordination:** The replacement Supabase project is healthy and
+main's queue-security migration `016_jobs_write_boundary.sql` is now applied. Synthetic hosted mapping
+and cleanup passed again. Your `phase1-tally-posting` branch (`63c957e`) includes the posting API and
+agent work, but predates that migration and has a separate migration also numbered 016. Before using it
+with the shared database, reconcile it with current main and give its migration a distinct sequence.
+Review and test the direct job updates in release/reconciliation against the restricted grants, the
+result route's handling of missing claim tokens, claim versus invoice-edit concurrency, and human approval
+after policy clearance. These are source-review findings, not a completed runtime audit. Keep posting
+disabled until integration, security review and synthetic tests pass; real Tally is not yet verified.
+
 **Updated 2026-11-02: local work complete; replacement database restored.** Current staging is
-**StartUps / FinLedger**, `smnfnnwmasnsuuwrboge` (Mumbai). Migrations **001-015** and the private
+**StartUps / FinLedger**, `smnfnnwmasnsuuwrboge` (Mumbai). Migrations **001-016** and the private
 empty bucket are applied; do not repeat the old migration-012 rollout. Hosted AI/tenant proof
 passed **11/11**, all 30 application tables have RLS, and API table/function grants are zero.
 See [recovery evidence](../SUPABASE_RECOVERY.md). Runtime deployment and credentials remain open.
