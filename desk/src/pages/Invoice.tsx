@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { bandText, rupees, safeSource, shown } from "@/format";
 import { PageHeader } from "@/pages/Placeholder";
 import { queueHref } from "@/router";
-import type { InvoiceResponse, Mark } from "@/types";
+import type { InvoiceResponse, Mark, PostingJob } from "@/types";
 import { partyLedgerName, voucherRows } from "@/voucherView";
 
 const EDIT_ROLES = ["ap_clerk", "approver", "firm_admin"];
@@ -128,6 +128,9 @@ export function InvoicePage({
     && (detail.can_edit ?? hasRole(EDIT_ROLES));
   const canApprove = inReview && (detail.can_approve ?? hasRole(APPROVE_ROLES));
   const canSendBack = inReview && hasRole(APPROVE_ROLES);
+  const blocked = page.posting?.blocked ?? true;
+  const postingJob = page.posting_job ?? null;
+  const canPostLater = processed && detail.status === "approved" && !postingJob && Boolean(detail.can_approve);
   const back = queueHref(clientId, "needs_review");
 
   return (
@@ -249,9 +252,18 @@ export function InvoicePage({
             {canApprove || canSendBack ? (
               <div className="flex flex-wrap gap-2">
                 {canApprove ? (
-                  <Button disabled={busy} onClick={() => void run(() => api.approve(clientId, documentId, detail.revision, false), "Approved.")}>
-                    Approve
-                  </Button>
+                  <>
+                    <Button disabled={busy} onClick={() => void run(() => api.approve(clientId, documentId, detail.revision, false), "Approved.")}>
+                      Approve
+                    </Button>
+                    <Button
+                      variant="outline"
+                      disabled={busy || blocked}
+                      onClick={() => void run(() => api.approve(clientId, documentId, detail.revision, true), "Approved. Waiting for the Tally agent.")}
+                    >
+                      Approve and post to Tally
+                    </Button>
+                  </>
                 ) : null}
                 {canSendBack ? (
                   <Button variant="outline" disabled={busy} onClick={() => void run(() => api.sendBack(clientId, documentId, detail.revision), "Sent back for a correction.")}>
@@ -263,10 +275,86 @@ export function InvoicePage({
             {inReview && !canApprove && detail.approval_note ? (
               <p className="text-sm text-muted-foreground">{detail.approval_note}</p>
             ) : null}
+            {canPostLater ? (
+              <Button
+                variant="outline"
+                disabled={busy || blocked}
+                onClick={() => void run(() => api.approve(clientId, documentId, detail.revision, true), "Waiting for the Tally agent.")}
+              >
+                Post to Tally
+              </Button>
+            ) : null}
+            {(canApprove || canPostLater) && blocked && page.posting?.reason ? (
+              <p className="text-sm text-muted-foreground">{page.posting.reason}</p>
+            ) : null}
+            {postingJob ? (
+              <PostingStatus
+                job={postingJob}
+                busy={busy}
+                onReturn={(note) => void run(() => api.returnToReview(clientId, documentId, detail.revision, note), "Returned to review as a new revision.")}
+                onReconcile={(decision, erpId, note) => void run(() => api.reconcile(clientId, documentId, decision, erpId, note), "Your decision was recorded.")}
+              />
+            ) : null}
           </div>
         </section>
       </div>
     </div>
+  );
+}
+
+function postingHeadline(job: PostingJob): string {
+  if (job.attempt_result === "posted") return `Posted. Tally ID ${job.erp_id ?? "not recorded"}`;
+  if (job.reconcile_decision === "absent") return "You recorded this bill as not in Tally. It can't post again in Phase 1.";
+  if (job.attempt_result === "outcome_uncertain" || job.job_state === "needs_reconciliation") {
+    return "Uncertain: do not re-enter this bill. Check Tally's Day Book.";
+  }
+  if (job.attempt_result === "failed") return `Tally rejected this bill: ${job.error ?? "no reason recorded"}`;
+  if (job.job_state === "running") return "Sending";
+  if (job.job_state === "queued") return "Waiting for agent";
+  if (job.job_state === "cancelled") return "Cancelled because the bill changed";
+  return job.job_state;
+}
+
+function PostingStatus({
+  job,
+  busy,
+  onReturn,
+  onReconcile,
+}: {
+  job: PostingJob;
+  busy: boolean;
+  onReturn: (note: string) => void;
+  onReconcile: (decision: "posted" | "absent", erpId: string, note: string) => void;
+}) {
+  const [note, setNote] = useState("");
+  const [erpId, setErpId] = useState("");
+  const noteOk = note.trim().length >= 10;
+  return (
+    <section aria-label="Tally posting" className="space-y-2 rounded-md border border-border bg-muted px-3 py-2">
+      <h3 className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">Tally posting</h3>
+      <p role="status" className="text-sm font-medium">{postingHeadline(job)}</p>
+      {job.can_return_to_review || job.can_reconcile ? (
+        <label className="block text-sm font-medium">
+          Note (at least 10 characters)
+          <Input className="mt-1.5" value={note} maxLength={2000} onChange={(event) => setNote(event.target.value)} />
+        </label>
+      ) : null}
+      {job.can_return_to_review ? (
+        <Button variant="outline" disabled={busy || !noteOk} onClick={() => onReturn(note.trim())}>Return to review</Button>
+      ) : null}
+      {job.can_reconcile ? (
+        <div className="space-y-2">
+          <label className="block text-sm font-medium">
+            Tally ID, if you found the voucher
+            <Input className="mt-1.5" value={erpId} maxLength={200} onChange={(event) => setErpId(event.target.value)} />
+          </label>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" disabled={busy || !noteOk || !erpId.trim()} onClick={() => onReconcile("posted", erpId.trim(), note.trim())}>Mark as posted</Button>
+            <Button variant="outline" disabled={busy || !noteOk} onClick={() => onReconcile("absent", "", note.trim())}>Mark as not in Tally</Button>
+          </div>
+        </div>
+      ) : null}
+    </section>
   );
 }
 

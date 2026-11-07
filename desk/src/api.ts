@@ -1,4 +1,4 @@
-import type { ClientRow, InvoiceResponse, QueueResponse, ReconciliationResponse, Session, UploadResponse } from "./types";
+import type { ClientRow, InvoiceResponse, PostingPanel, QueueResponse, ReconciliationResponse, Session, UploadResponse } from "./types";
 
 let csrfToken = "";
 
@@ -118,6 +118,21 @@ export const api = {
   sendBack: (clientId: string, documentId: string, revision: number) =>
     post(`/api/clients/${encodeURIComponent(clientId)}/invoices/${encodeURIComponent(documentId)}/reject`, {
       revision, resubmit: true,
+    }),
+  posting: (clientId: string) => request<PostingPanel>(`/api/clients/${encodeURIComponent(clientId)}/posting`),
+  enablePosting: (clientId: string, companyGuid: string, companyName: string) =>
+    post<{ enabled: boolean }>(`/api/clients/${encodeURIComponent(clientId)}/posting/enable`, {
+      company_guid: companyGuid, confirm_company_name: companyName,
+    }),
+  disablePosting: (clientId: string) =>
+    post<{ enabled: boolean }>(`/api/clients/${encodeURIComponent(clientId)}/posting/disable`, {}),
+  reconcile: (clientId: string, documentId: string, decision: "posted" | "absent", erpId: string, note: string) =>
+    post(`/api/clients/${encodeURIComponent(clientId)}/invoices/${encodeURIComponent(documentId)}/reconcile`, {
+      decision, erp_id: erpId, note,
+    }),
+  returnToReview: (clientId: string, documentId: string, revision: number, note: string) =>
+    post(`/api/clients/${encodeURIComponent(clientId)}/invoices/${encodeURIComponent(documentId)}/return-to-review`, {
+      revision, note,
     }),
   mfa: () => request<{ factor_id: string; secret: string; csrf_token: string }>("/api/mfa"),
   enroll: () => post<{ factor_id: string; secret: string }>("/api/mfa/enroll", {}),

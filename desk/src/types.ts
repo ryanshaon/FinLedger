@@ -23,6 +23,7 @@ export interface QueueItem {
   band: string | null;
   score: number | string | null;
   state_label: string;
+  status_reason?: string | null;
 }
 
 export interface QueueResponse {
@@ -90,6 +91,28 @@ export interface InvoiceResponse {
   invoice: InvoiceDetail;
   match?: ThreeWayMatch;
   posting?: PostingBlock;
+  posting_job?: PostingJob | null;
+}
+
+export interface PostingJob {
+  job_state: string;
+  attempt_result: string | null;
+  erp_id: string | null;
+  error: string | null;
+  reconcile_decision: string | null;
+  can_reconcile: boolean;
+  can_return_to_review: boolean;
+}
+
+export interface PostingPanel {
+  enabled: boolean;
+  company_name: string | null;
+  company_guid: string | null;
+  enabled_at: string | null;
+  enabled_by: string | null;
+  agent_last_seen_at: string | null;
+  can_change: boolean;
+  csrf_token: string;
 }
 
 export interface BankLine {

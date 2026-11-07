@@ -46,24 +46,18 @@ def check_values(text: str, table_marker: str, column: str) -> set[str]:
     return set(re.findall(r"'([^']+)'", altered[-1] if altered else found[0]))
 
 
-def test_gap1_posting_attempt_results_have_no_uncertain_state():
+def test_gap1_posting_attempts_can_hold_an_uncertain_outcome():
     values = check_values(sql(), "create table posting_attempts", "result")
-    assert values == {"pending", "posted", "failed"}, "gap #1 changed upstream: map outcome_uncertain to it"
+    assert values == {"pending", "posted", "failed", "outcome_uncertain"}, "gap #1 changed: the result route maps to it"
 
 
-def test_gap2_posting_attempts_have_no_evidence_columns():
-    table = last_definition(sql(), "create table posting_attempts", ");")
+def test_gap2_posting_attempts_carry_the_request_and_response_digests():
     text = sql()
-    for column in ("request_sha256", "response_sha256", "response_excerpt"):
-        assert column not in table, f"gap #2 changed upstream: fill {column} from PostOutcome"
-        assert not re.search(rf"alter\s+table\s+(?:only\s+)?posting_attempts\b[^;]*add\s+column\s+(?:if\s+not\s+"
-                             rf"exists\s+)?{column}\b", text, re.IGNORECASE), f"gap #2 changed upstream: fill {column}"
+    assert "add column request_sha256" in text and "add column response_sha256" in text, "gap #2 changed: result route fills them"
 
 
-def test_gap3_erp_links_have_no_company_guid():
-    text = sql()
-    assert "company_guid" not in last_definition(text, "create table erp_links", ");")
-    assert not re.search(r"alter table erp_links add column company_guid", text), "gap #3 changed upstream"
+def test_gap3_erp_links_hold_the_company_guid():
+    assert "add column company_guid" in sql(), "gap #3 changed: the claim route returns it"
 
 
 def _p3_enqueue_payload_keys() -> set[str]:
@@ -115,18 +109,22 @@ def test_gap8_bill_wise_cannot_name_an_original_invoice_or_issuer():
     assert fields == {"ref_type", "ref", "due_date"}, "gap #8 changed upstream"
 
 
-def test_gap10_there_is_no_agent_job_route():
+def test_gap10_the_agent_job_routes_exist():
     routes = re.findall(r'@app\.(?:get|post|put)\("([^"]+)"', P2_API.read_text())
     agent = sorted(r for r in routes if r.startswith("/agent/"))
-    assert agent == ["/agent/mapping", "/agent/masters", "/agent/open-bills"], f"gap #10 changed upstream: {agent}"
+    assert agent == ["/agent/jobs/claim", "/agent/jobs/{job_id}/release", "/agent/jobs/{job_id}/result",
+                     "/agent/mapping", "/agent/masters", "/agent/open-bills"], f"gap #10 changed upstream: {agent}"
 
 
-def test_gap11_claim_job_re_leases_an_expired_running_job_but_finish_is_fenced():
+def test_gap11_a_post_job_is_never_offered_again():
     text = sql()
     claim = last_definition(text, "create or replace function claim_job")
-    assert "state='running' and locked_until<now()" in claim.replace(" = ", "="), "gap #11 changed upstream"
-    finish = last_definition(text, "create function finish_job")
-    assert "claim_token=p_claim_token" in finish  # upstream already fences a stale finisher (claim_token, 005)
+    assert "post jobs use claim_post_job" in claim, "gap #11 changed upstream"
+    post = last_definition(text, "create function claim_post_job")
+    assert "state='needs_reconciliation'" in post and "state='queued'" in post
+    assert "state='running' and run_after" not in post
+    requeue = last_definition(text, "create or replace function requeue_dead_job")
+    assert "queue<>'post'" in requeue
 
 
 def test_gap13_voucher_type_values_differ_between_shared_and_p3():
@@ -144,9 +142,14 @@ def test_gap14_approval_kinds_and_supersession_match_what_p4_reads():
     assert "alter table approvals add column superseded_at" in text  # P4 from_rows requires this column
 
 
-def test_p3_policy_clear_approval_is_written_for_revision_1():
+def test_p3_policy_clear_approves_without_a_post_job():
     src = P3_SERVICE.read_text()
-    assert "values(%s,%s,'policy_clear',1)" in src and "self._enqueue_post(client_id, document_id, 1)" in src
+    assert "values(%s,%s,'policy_clear',1)" in src and "self._enqueue_post(client_id, document_id, 1)" not in src
+
+
+def test_the_disposable_company_prefix_is_the_same_on_both_sides():
+    from finledger_tally.preflight import LIVE_TEST_NAME_PREFIX
+    assert f'LIVE_TEST_NAME_PREFIX = "{LIVE_TEST_NAME_PREFIX}"' in P3_SERVICE.read_text()
 
 
 def test_p3_posted_transition_starts_from_the_statuses_p4_accepts():

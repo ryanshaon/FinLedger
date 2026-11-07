@@ -1,0 +1,2 @@
+# The Tally agent at runtime. The connector tests run in the Person 3 environment (see .github/workflows/ci.yml).
+pydantic>=2.9

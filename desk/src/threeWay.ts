@@ -13,6 +13,7 @@ export interface ThreeWayMatch {
 export interface PostingBlock {
   blocked: boolean;
   reason: string | null;
+  code?: string | null;
 }
 
 export interface MatchRow {

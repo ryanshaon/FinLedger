@@ -40,7 +40,9 @@ P3 approved post job ──► authorization ──► journal gate ──► co
 | `bills.py` | Read-only open bills → P2 `OpenBillsIn` payload (payables only) | via company |
 | `connector.py` | `TallyConnector`: the shared adapter methods (below) | via above |
 | `agent.py` | `AgentHost`: startup health, single-instance lock, one attempt per job, health re-check, status, signals | via connector |
-| `__main__.py` | `python -m finledger_tally config|health|sync|preflight`: read-only operator commands with exit codes | health only |
+| `__main__.py` | `python -m finledger_tally config|health|sync|preflight` (read-only) and `run-once` (the only command that can send an Import) | health only |
+| `platform_client.py` | HTTP client for the post-job routes: claim, result, release | platform only |
+| `run_once.py` | Phase 1: one job, one typed confirmation, at most one Import, with outcomes replayed after a crash | via above |
 | `config.py` | `AgentSettings.from_env`, `redacted()` | none |
 
 ### Shared adapter methods (ARCHITECTURE.md "Shared connector contract") — method audit

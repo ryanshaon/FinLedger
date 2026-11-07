@@ -219,12 +219,13 @@ def test_an_uncertain_live_send_is_returned_as_uncertain_and_not_retried(fake, t
     assert again is None and len(f.imports) == 1
 
 
-def test_nothing_in_the_package_calls_the_executor_or_exposes_it_on_the_cli():
+def test_only_run_once_calls_the_executor():
     callers = [p.name for p in SRC.glob("*.py")
                if p.name != "preflight.py" and re.search(r"execute_live_import\s*\(", p.read_text())]
-    assert callers == []
+    assert callers == ["run_once.py"], "only run-once, after a typed phrase, may call the executor"
     main = (SRC / "__main__.py").read_text()
     assert "execute_live_import" not in main
+    assert "ask_with_timeout" in main  # the command never answers its own confirmation
 
 
 def test_the_preflight_function_has_no_import_path():

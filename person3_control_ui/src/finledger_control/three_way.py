@@ -23,6 +23,17 @@ INV_AMOUNT = "Invoice amount differs."
 INTRA_BLOCK = "Posting is blocked. Offline Tally XML refuses intra-GST drafts."
 GST_BLOCK = "Posting is blocked. Offline Tally XML refuses this GST draft."
 
+PHASE1_REASONS = {
+    "posting_not_enabled": "Posting is off for this company.",
+    "not_human_approved": "A person must approve this revision before it can post.",
+    "tax_on_invoice": "This bill has tax. Phase 1 can't post taxed bills. Enter it in Tally by hand.",
+    "gst_not_exempt": "This draft isn't marked GST-exempt. Phase 1 can't post it. Enter it in Tally by hand.",
+    "tds_present": "This bill has TDS. Phase 1 can't post it. Enter it in Tally by hand.",
+    "new_vendor_ledger": "Create this ledger in Tally first. FinLedger never creates ledgers.",
+    "not_purchase": "Phase 1 only posts purchase vouchers.",
+    "round_off_present": "This bill has a round-off amount. Phase 1 can't post it. Enter it in Tally by hand.",
+}
+
 _QTY = Decimal("0.001")
 _MONEY = Decimal("0.01")
 
@@ -110,6 +121,44 @@ def offline_xml_posting_block(draft: dict | None) -> str | None:
         return INTRA_BLOCK
     if treatment not in (None, "", "exempt") or taxed:
         return GST_BLOCK
+    return None
+
+
+def _is_zero(value) -> bool:
+    """True only for a readable amount equal to zero. A missing or unreadable amount is not zero: the gate fails closed."""
+    try:
+        return Decimal(str(value)) == 0
+    except (InvalidOperation, ValueError):
+        return False
+
+
+def phase1_posting_block(draft: dict | None, invoice: dict | None, *, posting_enabled: bool,
+                         human_approved: bool) -> str | None:
+    """The first reason this bill may not create a post job in Phase 1, as a PHASE1_REASONS code; None when it may.
+
+    Checks the invoice as well as the draft: a draft marked exempt on an invoice that carries tax must not post.
+    Applies in every match mode. It does not build XML and does not open a Tally connection.
+    """
+    draft = draft if isinstance(draft, dict) else {}
+    invoice = invoice if isinstance(invoice, dict) else {}
+    if not posting_enabled:
+        return "posting_not_enabled"
+    if not human_approved:
+        return "not_human_approved"
+    if not all(_is_zero(invoice.get(field)) for field in ("cgst", "sgst", "igst", "cess")):
+        return "tax_on_invoice"
+    gst = draft.get("gst") if isinstance(draft.get("gst"), dict) else {}
+    if gst.get("treatment") != "exempt" or gst.get("input_ledgers") or gst.get("tax_breakup"):
+        return "gst_not_exempt"
+    tds = draft.get("tds") if isinstance(draft.get("tds"), dict) else {}
+    if tds.get("applicable") or tds.get("section") or tds.get("ledger") or not _is_zero(tds.get("amount", 0)):
+        return "tds_present"
+    if draft.get("party_create_proposal") is not False:
+        return "new_vendor_ledger"
+    if draft.get("voucher_type") != "purchase":
+        return "not_purchase"
+    if not _is_zero(invoice.get("round_off")):
+        return "round_off_present"
     return None
 
 

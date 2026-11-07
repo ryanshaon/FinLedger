@@ -4,6 +4,12 @@ Updated 2026-10-24 after [PR #41](https://github.com/ryanshaon/FinLedger/pull/41
 [#47](https://github.com/ryanshaon/FinLedger/pull/47) and Ruthvik's post-Harshith changes merged into main (`4bbf722`).
 This is your only active assignment file.
 
+**2026-11-07 — Phase 1 reconciliation done locally:** branch `claude/project-thread-wlgw4v` uses
+migration `017_phase1_posting.sql` and addresses the restricted job updates, live claim tokens, the edit/claim
+race and human approval after policy clearance, with tests (see HANDOVER Latest status). Remaining: PR review,
+independent security review, approval before 017 is applied anywhere, then the hosted items in section 2.
+Posting stays disabled.
+
 **2026-11-07 — Tally integration coordination:** The replacement Supabase project is healthy and
 main's queue-security migration `016_jobs_write_boundary.sql` is now applied. Synthetic hosted mapping
 and cleanup passed again. Disabled API, control, ingest, score and outbox database roles are provisioned;

@@ -283,6 +283,20 @@ every completed or WIP change. No uncommitted implementation may remain on the P
 
 ## Latest status
 
+**2026-11-07 — Phase 1 Tally posting reconciled with main (Harshith):** Branch
+`claude/project-thread-wlgw4v` rebases the old `phase1-tally-posting` work onto main and renames its
+migration to `017_phase1_posting.sql`; 001-016 are untouched. It addresses the four source-review findings:
+release and reconcile no longer UPDATE `jobs` directly (new `release_post_job`, `reconcile_post_job` and
+`post_claim_state` definer functions; reconcile only moves a job waiting in `needs_reconciliation`); a result
+is recorded only under the live claim token, and the claim check, result and job settlement share one
+transaction; `lock_post_jobs_for_edit` also treats `needs_reconciliation` as active, so an edit is refused
+while a post waits for a person; an approver who is not the maker or an editor can add the human approval a
+policy-cleared bill needs, and only then can it post. Local throwaway PostgreSQL 16, synthetic data only:
+platform **390 passed**, control **175 passed** (5 new tests), Person 4 **3027 passed, 84 skipped**
+(PowerShell capture kit, no `pwsh`), 0 failed. CI run 42365402293 on the pre-handover head `8a4f26b` passed
+every job. No Supabase changes, no real Tally, posting stays disabled. **Do not apply 017 to Supabase** until
+the PR is reviewed, independently security-reviewed and approved.
+
 **2026-11-07 — Harshith handover clarification:** Added the current Supabase, runtime credential and
 local Tally-work status above. Fetched `origin/claude/project-thread-wlgw4v` at `8a4f26b` and confirmed
 that it contains a 017 posting migration and a subsequent claim-related commit; their correctness and CI
@@ -454,7 +468,8 @@ head's CI and integration state; merge only with green checks on that exact head
 **Next work:** finish exact-head CI/integration for PR #54 if still open, then existing owner-gated runtime
 login, Auth, storage, scanner, hosting and live-provider proofs. Do not repeat completed work or activate/buy
 resources without recorded decisions. This is local/mock verification, not production readiness. The primary
-MVP excludes email, finished every-bill TDS, PO/GRN/three-way screens, outstanding bills, Tally posting, bank
+MVP excludes email, finished every-bill TDS, PO/GRN/three-way screens, outstanding bills, client Tally posting (Phase 1
+tests posting to one disposable company only; see `README.md`), bank
 matching, payments and GST filing. Preserve future connector code. See [release evidence](docs/RELEASE_EVIDENCE.md).
 
 **2026-11-02 replacement Supabase restored:** Branch `restore/new-supabase-finledger`, PR #53.

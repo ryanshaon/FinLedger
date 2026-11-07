@@ -127,7 +127,6 @@ def test_cli_has_no_posting_command(args):
 
 
 def test_a_stop_signal_ends_the_loop_after_the_current_job(tally, tmp_path):
-    import os
     import signal
     import threading
 
@@ -137,7 +136,8 @@ def test_a_stop_signal_ends_the_loop_after_the_current_job(tally, tmp_path):
     old = signal.getsignal(signal.SIGTERM)
     try:
         stop_on_signals(host, (signal.SIGTERM,))
-        threading.Timer(0.3, lambda: os.kill(os.getpid(), signal.SIGTERM)).start()
+        handler = signal.getsignal(signal.SIGTERM)  # a real SIGTERM would end the whole test run on Windows
+        threading.Timer(0.3, lambda: handler(signal.SIGTERM, None)).start()
         results = host.run(interval=60)
     finally:
         signal.signal(signal.SIGTERM, old)

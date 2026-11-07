@@ -73,9 +73,20 @@ def _draft(doc):
             "attachment_document_id": doc, "reasons": [], "map_trace_id": "22222222-2222-2222-2222-222222222222"}
 
 
+def _posting_on(conn, world, cid):
+    """The platform's posting switch on for this test client, so the real approve() can create the real job."""
+    with tenant(conn, cid):
+        conn.execute("""insert into erp_links(client_id,erp_type,company_name,company_guid,posting_enabled_at,posting_enabled_by)
+                        values (%s,'tally',%s,%s,now(),%s)
+                        on conflict (client_id) do update set company_guid=excluded.company_guid,
+                          posting_enabled_at=excluded.posting_enabled_at,posting_enabled_by=excluded.posting_enabled_by""",
+                     (cid, TEST_CO[0], TEST_CO[1], world["admin"]))
+
+
 def _approved(conn, world, document):
     svc = ControlService(conn)
     cid = world["client"]["id"]
+    _posting_on(conn, world, cid)
     svc.score(cid, document, _canonical(document), world["clerk"])
     routed = svc.submit_draft(cid, document, _draft(document), world["clerk"])
     svc.approve(cid, document, world["approver"], post=True, expected_revision=routed["revision"])
@@ -90,6 +101,18 @@ def _approved(conn, world, document):
     auth = PostAuthorization.from_rows(cid, doc_row, attempt, approvals)
     assert auth.approvals == (("human", attempt["revision"]),)  # the real P3 approve() row
     return svc, job, auth
+
+
+def _claim_token(conn, cid, job_id):
+    """The live claim the agent holds for this job, as P2's claim route would hand it over; claims it if nobody has.
+    Only the live claim may record a result."""
+    with tenant(conn, cid):
+        token = conn.execute("select claim_token from jobs where id=%s", (job_id,)).fetchone()["claim_token"]
+    if token is None:
+        claimed = conn.execute("select id, claim_token from claim_post_job(%s, 300)", (cid,)).fetchone()
+        if claimed and claimed["id"] == job_id:
+            token = claimed["claim_token"]
+    return token
 
 
 @pytest.fixture
@@ -115,7 +138,8 @@ def test_real_p3_approval_passes_the_gate_and_posts_once(conn, world, document, 
     out = post_approved(payload, auth, s, expected_total=Decimal("11800"))
     assert out.state == State.POSTED and len(fake.imports) == 1
     result = svc.erp_result(cid, document, job_id=job["id"], revision=payload["revision"],
-                            idempotency_key=payload["idempotency_key"], **out.erp_result())
+                            idempotency_key=payload["idempotency_key"], claim_token=_claim_token(conn, cid, job["id"]),
+                            **out.erp_result())
     assert result["status"] == "posted"
     with tenant(conn, cid):
         row = conn.execute("select result, erp_id from posting_attempts where job_id=%s", (job["id"],)).fetchone()
@@ -153,7 +177,8 @@ def test_tally_rejection_lands_as_p3_exception(conn, world, document, fake, tmp_
     out = post_approved(payload, auth, _settings(fake, tmp_path, world["client"]["id"]))
     assert out.state == State.TALLY_REJECTED
     result = svc.erp_result(world["client"]["id"], document, job_id=job["id"], revision=payload["revision"],
-                            idempotency_key=payload["idempotency_key"], **out.erp_result())
+                            idempotency_key=payload["idempotency_key"],
+                            claim_token=_claim_token(conn, world["client"]["id"], job["id"]), **out.erp_result())
     assert result["status"] == "exception"
 
 
@@ -189,9 +214,10 @@ class _P3Sink:
 
     def report(self, claimed, result):
         p = claimed.payload
+        token = _claim_token(self.svc.conn, self.cid, claimed.job_id)
         self.results.append(self.svc.erp_result(self.cid, self.document, job_id=claimed.job_id,
                                                 revision=p["revision"], idempotency_key=p["idempotency_key"],
-                                                **result))
+                                                claim_token=token, **result))
 
 
 def test_end_to_end_with_real_p3_rows(conn, world, document, fake, tmp_path):
