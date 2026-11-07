@@ -28,8 +28,9 @@ Claude does the same in reverse when handing to you.
 
 ## Mission and hard rules
 
-- Product: a sellable multi-tenant accounts-payable app for Indian CA firms. Persons 1–3 only.
-  **Never edit `person4_tally/`.**
+- Product: a sellable multi-tenant accounts-payable app for Indian CA firms. Harshith owns the Tally
+  integration and may edit `person4_tally/`, including through an assistant working on his assigned task.
+  Other contributors should coordinate Tally changes with Harshith and avoid overwriting his work.
 - Never print, commit or paste secrets. Real values live only in environment/secret settings. `.env` is gitignored.
 - Never run the app as `postgres`/service role/any RLS-bypassing role. App role = login that is a member of
   `finledger_app` (the code refuses others via `assert_rls_applies`).

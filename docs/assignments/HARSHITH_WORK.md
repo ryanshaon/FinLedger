@@ -194,5 +194,6 @@ Each PR/HANDOVER update lists exact commands/pass/fail/skip counts, environment,
 actual hosted changes and named blockers. Require green CI on the exact final commit and
 independent security review. P2 dependency changes require both P2/P3 lockfiles.
 
-No RLS/MFA/scanner bypass, force-push cleanup, AI attribution trailers or `person4_tally/` edits.
+Harshith and assistants working on his assigned Tally tasks may edit `person4_tally/`; use a branch,
+tests and a pull request. No RLS/MFA/scanner bypass, force-push cleanup or AI attribution trailers.
 Do not claim production readiness while integration or hosted verification remains blocked.

@@ -11,14 +11,14 @@ Architecture baseline: 23 Sep 2026. Hard rule: extraction never posts.
 
 Shared objects: `shared/00_SHARED_CONTRACTS.md` and `shared/Shared_Contracts.pdf`.
 
-The workspace contains the work for Persons 1–4. This handoff covers Persons 1–3 only;
-Person 4 has separately contributed connector code and is not assessed here.
+The workspace contains the work for Persons 1–4. Harshith owns the Person 4 Tally connector;
+its readiness is documented separately from the Persons 1–3 baseline below.
 
 ## Helping finish FinLedger
 
 Start with [the three-person work split](docs/TEAM_WORK_SPLIT.md): AI, platform/deployment,
 and controls/QA. Read [HANDOVER.md](HANDOVER.md) before changes. Do not rebuild completed work,
-share `.env`, or edit `person4_tally/` as part of these assignments.
+or share `.env`. Coordinate changes to `person4_tally/` with Harshith.
 
 ## Capability status
 

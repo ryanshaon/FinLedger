@@ -30,5 +30,6 @@ another brief. Preserve useful verification evidence and completed milestones.
 - [Provider proposal](decisions/ADR-001-AI_PROVIDER.md): proposed policy, not activation permission.
 
 Synthetic data only. Keep secrets private; no MFA/RLS/scanner bypass, force-push cleanup,
-or paid/hosted activation without the appropriate approval. Never edit `person4_tally/`.
+or paid/hosted activation without the appropriate approval. Harshith owns `person4_tally/`;
+coordinate Tally changes with him.
 Superseded assignment files were removed from the current tree; Git history preserves them.
