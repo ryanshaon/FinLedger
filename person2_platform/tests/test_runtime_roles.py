@@ -1,9 +1,16 @@
+import os
 from pathlib import Path
 
 import psycopg
+import pytest
+
+from finledger_platform.db import migrate
 
 
-def test_runtime_roles_start_disabled_and_have_only_their_worker_role(owner_dsn, app_dsn):
+def test_runtime_roles_start_disabled_and_have_only_their_worker_role(owner_dsn):
+    if os.environ.get('FINLEDGER_TEST_OWNER_DSN'):
+        pytest.skip('role test requires an isolated temporary PostgreSQL cluster')
+    migrate(owner_dsn)
     roles = {'fl_api': None, 'fl_control': None, 'fl_ingest': 'ingest',
              'fl_score': 'score', 'fl_outbox': None}
     script = Path(__file__).parents[1] / 'src/finledger_platform/migrations/recovery/provision_runtime_roles.sql'
@@ -17,6 +24,8 @@ def test_runtime_roles_start_disabled_and_have_only_their_worker_role(owner_dsn,
                 flags = conn.execute('select rolcanlogin, rolsuper, rolbypassrls, rolcreaterole, rolcreatedb, rolreplication from pg_roles where rolname=%s', (role,)).fetchone()
                 assert flags == (False, False, False, False, False, False)
                 assert conn.execute("select pg_has_role(%s, 'finledger_app', 'member')", (role,)).fetchone()[0]
+                assert not conn.execute("select has_table_privilege(%s, 'public.jobs', 'UPDATE,DELETE')", (role,)).fetchone()[0]
+                assert not conn.execute("select has_schema_privilege(%s, 'public', 'CREATE')", (role,)).fetchone()[0]
                 for queue in ('ingest', 'extract', 'score', 'map', 'post'):
                     member = conn.execute('select pg_has_role(%s, %s, %s)', (role, 'finledger_worker_' + queue, 'member')).fetchone()[0]
                     assert member == (queue == worker)
