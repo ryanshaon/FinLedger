@@ -260,6 +260,13 @@ every completed or WIP change. No uncommitted implementation may remain on the P
 
 ## Latest status
 
+**2026-11-07 — runtime-role preparation:** Branch `setup/restricted-runtime-roles` prepares an
+operator-only script for disabled `fl_api`, `fl_control`, `fl_ingest`, `fl_score` and `fl_outbox`
+roles, with per-process worker memberships. The existing `fl_map` is untouched. `fl_extract` and
+queue-ops/posting grants remain gated by provider and integration decisions. Local throwaway Postgres
+role test: **1 passed**. The owner must set each password privately before its login is enabled;
+no password or login activation is included in this script. Check PR CI and hosted status before use.
+
 **2026-11-07 — hosted queue boundary and Tally integration review:** On replacement project
 `smnfnnwmasnsuuwrboge`, applied the committed `016_jobs_write_boundary.sql` from main after PR #66
 passed test, image and desk CI. The Supabase migration also records the filename in the app migration
