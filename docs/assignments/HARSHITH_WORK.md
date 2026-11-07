@@ -6,7 +6,9 @@ This is your only active assignment file.
 
 **2026-11-07 — Tally integration coordination:** The replacement Supabase project is healthy and
 main's queue-security migration `016_jobs_write_boundary.sql` is now applied. Synthetic hosted mapping
-and cleanup passed again. Your `phase1-tally-posting` branch (`63c957e`) includes the posting API and
+and cleanup passed again. Disabled API, control, ingest, score and outbox database roles are provisioned;
+they still require privately set passwords, activation and session-pooler testing. Your
+`phase1-tally-posting` branch (`63c957e`) includes the posting API and
 agent work, but predates that migration and has a separate migration also numbered 016. Before using it
 with the shared database, reconcile it with current main and give its migration a distinct sequence.
 Review and test the direct job updates in release/reconciliation against the restricted grants, the
