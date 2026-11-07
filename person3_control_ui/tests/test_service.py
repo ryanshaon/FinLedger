@@ -13,6 +13,11 @@ from finledger_platform.db import tenant
 from finledger_platform.queue import claim
 
 
+def claim_post(conn, client_id):
+    """Claims the client's next post job as the Tally agent would; returns its claim token."""
+    return conn.execute("select claim_token from claim_post_job(%s, 60)", (client_id,)).fetchone()["claim_token"]
+
+
 def canonical(document_id, **overrides):
     inv = {"document_id": document_id, "document_type": "purchase_invoice",
            "vendor": {"name": "Shree Ganesh Metals", "gstin": "27AAACS1234A1Z2"},
@@ -123,9 +128,10 @@ def test_person4_failure_moves_to_exception_without_new_post_job(conn, world, do
     routed = svc.submit_draft(world["client"]["id"], document, exempt_draft(document), world["clerk"])
     svc.approve(world["client"]["id"], document, world["approver"], post=True, expected_revision=routed["revision"])
     job = svc.post_job(world["client"]["id"], document)
+    token = claim_post(conn, world["client"]["id"])
     result = svc.erp_result(world["client"]["id"], document, ok=False, error="Tally company unavailable",
                             job_id=job["id"], revision=routed["revision"],
-                            idempotency_key=f"{document}:r{routed['revision']}")
+                            idempotency_key=f"{document}:r{routed['revision']}", claim_token=token)
     assert result["status"] == "exception"
     assert svc.post_job_count(world["client"]["id"], document) == 1
 
@@ -185,10 +191,10 @@ def test_edit_is_blocked_once_post_job_is_claimed(conn, world, document, posting
         svc.edit_field(world["client"]["id"], document, world["clerk"], "party_ledger", "Changed", expected_revision=1)
 
 
-def test_edit_waits_for_concurrent_claim_and_preserves_approval(conn, pool, world, document, owner_dsn):
+def test_edit_waits_for_concurrent_claim_and_preserves_approval(conn, pool, world, document, owner_dsn, posting_on):
     svc = ControlService(conn)
-    svc.score(world['client']['id'], document, canonical(document), world['clerk'])
-    routed = svc.submit_draft(world['client']['id'], document, draft(document), world['clerk'])
+    svc.score(world['client']['id'], document, exempt_invoice(document), world['clerk'])
+    routed = svc.submit_draft(world['client']['id'], document, exempt_draft(document), world['clerk'])
     svc.approve(world['client']['id'], document, world['approver'], post=True, expected_revision=routed['revision'])
     started = threading.Event()
     result = {}
@@ -228,10 +234,10 @@ def test_edit_waits_for_concurrent_claim_and_preserves_approval(conn, pool, worl
         assert conn.execute('select count(*) as n from approvals where document_id=%s and superseded_at is null', (document,)).fetchone()['n'] == 1
 
 
-def test_edit_times_out_safely_when_post_job_stays_locked(conn, world, document, owner_dsn):
+def test_edit_times_out_safely_when_post_job_stays_locked(conn, world, document, owner_dsn, posting_on):
     svc = ControlService(conn)
-    svc.score(world['client']['id'], document, canonical(document), world['clerk'])
-    routed = svc.submit_draft(world['client']['id'], document, draft(document), world['clerk'])
+    svc.score(world['client']['id'], document, exempt_invoice(document), world['clerk'])
+    routed = svc.submit_draft(world['client']['id'], document, exempt_draft(document), world['clerk'])
     svc.approve(world['client']['id'], document, world['approver'], post=True, expected_revision=routed['revision'])
     with psycopg.connect(owner_dsn) as claimant:
         claimant.execute("update jobs set state='running', claim_token=gen_random_uuid() where document_id=%s and queue='post'", (document,))
@@ -243,67 +249,43 @@ def test_edit_times_out_safely_when_post_job_stays_locked(conn, world, document,
         assert row == {'status': 'approved', 'revision': 1}
 
 
-def test_dead_post_requeue_waits_for_edit_and_cannot_revive_it(conn, pool, world, document, owner_dsn):
+def test_dead_post_job_is_never_requeued_even_during_an_edit(conn, pool, world, document, owner_dsn, posting_on):
+    """Phase 1 never requeues a post job (the Import may already be in Tally), so a queue operator cannot revive an
+    old approval while an edit cancels it: the requeue refuses at once instead of waiting for the edit's lock."""
     svc = ControlService(conn)
-    svc.score(world['client']['id'], document, canonical(document), world['clerk'])
-    routed = svc.submit_draft(world['client']['id'], document, draft(document), world['clerk'])
+    svc.score(world['client']['id'], document, exempt_invoice(document), world['clerk'])
+    routed = svc.submit_draft(world['client']['id'], document, exempt_draft(document), world['clerk'])
     svc.approve(world['client']['id'], document, world['approver'], post=True, expected_revision=routed['revision'])
     job = svc.post_job(world['client']['id'], document)['id']
-    started = threading.Event()
-    result = {}
-
-    def requeue():
-        try:
-            with pool.connection() as worker:
-                result['pid'] = worker.info.backend_pid
-                started.set()
-                result['requeued'] = worker.execute('select requeue_dead_job(%s) as ok', (job,)).fetchone()['ok']
-        except Exception as exc:
-            result['error'] = exc
-
     with psycopg.connect(owner_dsn, autocommit=True) as owner:
         owner.execute('grant finledger_queue_ops to fl_control')
         owner.execute("update jobs set state='dead' where id=%s", (job,))
-        thread = threading.Thread(target=requeue)
         try:
             with svc._tx(world['client']['id']):
                 assert not conn.execute('select lock_post_jobs_for_edit(%s) as active', (document,)).fetchone()['active']
+                with pool.connection() as operator:
+                    operator.execute("set lock_timeout='2s'")
+                    assert operator.execute('select requeue_dead_job(%s) as ok', (job,)).fetchone()['ok'] is False
                 assert conn.execute('select cancel_unfinished_post_jobs(%s) as n', (document,)).fetchone()['n'] == 1
-                thread.start()
-                assert started.wait(5)
-                deadline = time.monotonic() + 5
-                while time.monotonic() < deadline:
-                    waiting = owner.execute('select wait_event_type from pg_stat_activity where pid=%s', (result['pid'],)).fetchone()
-                    if waiting and waiting[0] == 'Lock':
-                        break
-                    time.sleep(0.05)
-                else:
-                    pytest.fail('requeue did not wait for the edit lock')
-            thread.join(timeout=10)
-            assert not thread.is_alive() and result.get('requeued') is False and 'error' not in result
             assert owner.execute('select state from jobs where id=%s', (job,)).fetchone()[0] == 'cancelled'
         finally:
-            thread.join(timeout=10) if thread.ident else None
             owner.execute('revoke finledger_queue_ops from fl_control')
 
 
-def test_worker_skips_post_job_locked_by_editor(conn, world, document, owner_dsn, app_dsn):
+def test_worker_skips_post_job_locked_by_editor(conn, world, document, owner_dsn, app_dsn, posting_on):
     svc = ControlService(conn)
-    svc.score(world['client']['id'], document, canonical(document), world['clerk'])
-    routed = svc.submit_draft(world['client']['id'], document, draft(document), world['clerk'])
+    svc.score(world['client']['id'], document, exempt_invoice(document), world['clerk'])
+    routed = svc.submit_draft(world['client']['id'], document, exempt_draft(document), world['clerk'])
     svc.approve(world['client']['id'], document, world['approver'], post=True, expected_revision=routed['revision'])
+    # fl_control is already a post worker (conftest); post jobs are claimed per client with claim_post_job.
     with psycopg.connect(owner_dsn, autocommit=True) as owner:
-        owner.execute('grant finledger_worker_post to fl_control')
-        try:
-            with psycopg.connect(app_dsn, autocommit=True, row_factory=dict_row) as worker:
-                worker.execute("set statement_timeout='3s'")
-                with svc._tx(world['client']['id']):
-                    assert not conn.execute('select lock_post_jobs_for_edit(%s) as active', (document,)).fetchone()['active']
-                    assert conn.execute('select cancel_unfinished_post_jobs(%s) as n', (document,)).fetchone()['n'] == 1
-                    assert claim(worker, 'post') is None
-            assert owner.execute("select state from jobs where document_id=%s and queue='post'", (document,)).fetchone()[0] == 'cancelled'
-        finally:
-            owner.execute('revoke finledger_worker_post from fl_control')
+        with psycopg.connect(app_dsn, autocommit=True, row_factory=dict_row) as worker:
+            worker.execute("set statement_timeout='3s'")
+            with svc._tx(world['client']['id']):
+                assert not conn.execute('select lock_post_jobs_for_edit(%s) as active', (document,)).fetchone()['active']
+                assert conn.execute('select cancel_unfinished_post_jobs(%s) as n', (document,)).fetchone()['n'] == 1
+                assert worker.execute('select * from claim_post_job(%s, 60)', (world['client']['id'],)).fetchone() is None
+        assert owner.execute("select state from jobs where document_id=%s and queue='post'", (document,)).fetchone()[0] == 'cancelled'
 
 
 def test_boundary_rejects_mismatched_document_ids(conn, world, document):
@@ -323,11 +305,18 @@ def test_erp_callback_rejects_stale_revision_and_persists_success(conn, world, d
     routed = svc.submit_draft(world["client"]["id"], document, exempt_draft(document), world["clerk"])
     svc.approve(world["client"]["id"], document, world["approver"], post=True, expected_revision=1)
     job = svc.post_job(world["client"]["id"], document)
+    with pytest.raises(Conflict, match="claim is no longer valid"):  # nobody holds a claim yet
+        svc.erp_result(world["client"]["id"], document, ok=True, erp_id="TALLY-1", job_id=job["id"],
+                       revision=1, idempotency_key=f"{document}:r1")
+    token = claim_post(conn, world["client"]["id"])
+    with pytest.raises(Conflict, match="claim is no longer valid"):  # a wrong token changes nothing
+        svc.erp_result(world["client"]["id"], document, ok=True, erp_id="TALLY-1", job_id=job["id"],
+                       revision=1, idempotency_key=f"{document}:r1", claim_token=uuid.uuid4())
     with pytest.raises(Conflict, match="revision"):
         svc.erp_result(world["client"]["id"], document, ok=True, erp_id="TALLY-1", job_id=job["id"],
-                       revision=2, idempotency_key=f"{document}:r2")
+                       revision=2, idempotency_key=f"{document}:r2", claim_token=token)
     result = svc.erp_result(world["client"]["id"], document, ok=True, erp_id="TALLY-1", job_id=job["id"],
-                            revision=1, idempotency_key=f"{document}:r1")
+                            revision=1, idempotency_key=f"{document}:r1", claim_token=token)
     assert result["status"] == "posted"
     with svc._tx(world["client"]["id"]):
         row = conn.execute("select erp_id,result from posting_attempts where job_id=%s", (job["id"],)).fetchone()

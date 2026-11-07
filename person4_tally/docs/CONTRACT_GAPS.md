@@ -12,7 +12,7 @@ platform component · E = needs a real Tally capture · F = needs a product or a
 
 | # | Gap | Owner | Status | Evidence |
 |---|---|---|---|---|
-| 1 | Uncertain posting state on the attempt | B | **done** (migration 016, result route) | `test_gap1_…` |
+| 1 | Uncertain posting state on the attempt | B | **done** (migration 017, result route) | `test_gap1_…` |
 | 2 | Request/response digests on the attempt | B | **done** (digests only; the bytes stay in the local journal) | `test_gap2_…` |
 | 3 | Company GUID on `erp_links` | B | **done**; set by the owner when enabling posting, cleared by re-pairing | `test_gap3_…` |
 | 4 | Post job lacks invoice total and vendor GSTIN | C | **open**; optional P4 parameters | `test_gap4_…` |

@@ -103,6 +103,18 @@ def _approved(conn, world, document):
     return svc, job, auth
 
 
+def _claim_token(conn, cid, job_id):
+    """The live claim the agent holds for this job, as P2's claim route would hand it over; claims it if nobody has.
+    Only the live claim may record a result."""
+    with tenant(conn, cid):
+        token = conn.execute("select claim_token from jobs where id=%s", (job_id,)).fetchone()["claim_token"]
+    if token is None:
+        claimed = conn.execute("select id, claim_token from claim_post_job(%s, 300)", (cid,)).fetchone()
+        if claimed and claimed["id"] == job_id:
+            token = claimed["claim_token"]
+    return token
+
+
 @pytest.fixture
 def fake():
     f = FakeTally(companies=[TEST_CO], ledgers={TEST_CO[1]: [ledger(VENDOR, "Sundry Creditors", n=1),
@@ -126,7 +138,8 @@ def test_real_p3_approval_passes_the_gate_and_posts_once(conn, world, document, 
     out = post_approved(payload, auth, s, expected_total=Decimal("11800"))
     assert out.state == State.POSTED and len(fake.imports) == 1
     result = svc.erp_result(cid, document, job_id=job["id"], revision=payload["revision"],
-                            idempotency_key=payload["idempotency_key"], **out.erp_result())
+                            idempotency_key=payload["idempotency_key"], claim_token=_claim_token(conn, cid, job["id"]),
+                            **out.erp_result())
     assert result["status"] == "posted"
     with tenant(conn, cid):
         row = conn.execute("select result, erp_id from posting_attempts where job_id=%s", (job["id"],)).fetchone()
@@ -164,7 +177,8 @@ def test_tally_rejection_lands_as_p3_exception(conn, world, document, fake, tmp_
     out = post_approved(payload, auth, _settings(fake, tmp_path, world["client"]["id"]))
     assert out.state == State.TALLY_REJECTED
     result = svc.erp_result(world["client"]["id"], document, job_id=job["id"], revision=payload["revision"],
-                            idempotency_key=payload["idempotency_key"], **out.erp_result())
+                            idempotency_key=payload["idempotency_key"],
+                            claim_token=_claim_token(conn, world["client"]["id"], job["id"]), **out.erp_result())
     assert result["status"] == "exception"
 
 
@@ -200,9 +214,10 @@ class _P3Sink:
 
     def report(self, claimed, result):
         p = claimed.payload
+        token = _claim_token(self.svc.conn, self.cid, claimed.job_id)
         self.results.append(self.svc.erp_result(self.cid, self.document, job_id=claimed.job_id,
                                                 revision=p["revision"], idempotency_key=p["idempotency_key"],
-                                                **result))
+                                                claim_token=token, **result))
 
 
 def test_end_to_end_with_real_p3_rows(conn, world, document, fake, tmp_path):

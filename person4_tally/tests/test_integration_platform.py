@@ -262,7 +262,8 @@ def _finish(conn, job):
 def _report(svc, cid, document, job, outcome: PostOutcome):
     p = job["payload"]
     return svc.erp_result(cid, document, job_id=job["id"], revision=p["revision"],
-                          idempotency_key=p["idempotency_key"], **outcome.erp_result())
+                          idempotency_key=p["idempotency_key"], claim_token=job.get("claim_token"),
+                          **outcome.erp_result())
 
 
 def _p3(conn, cid, document, job_id) -> SimpleNamespace:
@@ -452,7 +453,9 @@ def _steps_1_to_15(conn, world, document, p2_app, fake, tmp_path, svc, cid, queu
     st = _p3(conn, cid, document, job["id"])
     assert (st.status, st.result, st.erp_id, st.error) == ("posted", "posted", out.erp_id, None)
     assert st.events == [("erp_posted", {"erp_id": out.erp_id, "error": None})]
-    assert _finish(conn, job) == "done"
+    assert _finish(conn, job) is None  # erp_result already settled the job in the same transaction
+    with tenant(conn, cid):
+        assert conn.execute("select state from jobs where id=%s", (job["id"],)).fetchone()["state"] == "done"
     assert fake.imports == [preview.xml]
 
 
@@ -467,10 +470,11 @@ def test_a_post_job_re_leased_by_p2_returns_the_recorded_erp_id_without_any_tall
     s = _settings(fake, tmp_path, cid)
     out = TallyConnector(s).post_invoice(first["payload"], _auth(conn, cid, document, first["id"]))
     assert out.state == State.POSTED
-    assert _report(svc, cid, document, first, out) == {"status": "posted"}  # then the agent dies before finish_job
+    # the report settles the job in the same transaction, so an agent dying right after it leaves nothing open
+    assert _report(svc, cid, document, first, out) == {"status": "posted"}
     owner.execute("update jobs set locked_until = now() - interval '1 second' where id=%s", (first["id"],))
-    assert _claim(conn) is None  # gap 11: an expired lease is never offered again; it waits for a person
-    assert owner.execute("select state from jobs where id=%s", (first["id"],)).fetchone()["state"] == "needs_reconciliation"
+    assert _claim(conn) is None
+    assert owner.execute("select state from jobs where id=%s", (first["id"],)).fetchone()["state"] == "done"
     calls = len(fake.kinds)
     for state_dir in (s.state_dir, tmp_path / "lost_state"):  # even a delivery by other means, with the journal or without
         dup = TallyConnector(replace(s, state_dir=state_dir)).post_invoice(
@@ -478,7 +482,7 @@ def test_a_post_job_re_leased_by_p2_returns_the_recorded_erp_id_without_any_tall
         assert (dup.state, dup.erp_id) == (State.ALREADY_POSTED, out.erp_id)
         assert _report(svc, cid, document, first, dup) == {"status": "posted"}
     assert len(fake.kinds) == calls and len(fake.imports) == 1
-    assert _finish(conn, first) == "done"  # the late report still settles it, because the token was kept
+    assert _finish(conn, first) is None  # already done; a repeat changes nothing
     st = _p3(conn, cid, document, first["id"])
     assert (st.status, st.result, st.erp_id) == ("posted", "posted", out.erp_id) and len(st.events) == 1
 
@@ -791,7 +795,7 @@ def test_p3_refusing_a_posted_result_after_an_edit_cannot_lead_to_a_second_vouch
     assert out.state == State.POSTED
     rev = job["payload"]["revision"]
     svc.edit_field(cid, document, world["clerk"], "narration", "edited after posting", expected_revision=rev)
-    with pytest.raises(Conflict, match="in_review"):
+    with pytest.raises(Conflict, match="claim is no longer valid"):  # the edit cancelled the unclaimed job
         _report(svc, cid, document, job, out)
     st = _p3(conn, cid, document, job["id"])
     assert (st.status, st.result, st.erp_id) == ("in_review", "pending", None)

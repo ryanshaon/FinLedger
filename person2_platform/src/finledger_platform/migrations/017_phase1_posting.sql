@@ -147,3 +147,70 @@ begin
   end loop;
   return active;
 end $$;
+
+-- The app no longer updates jobs directly (016). These are the only ways a post job changes outside claim and settle.
+
+-- Locks a post job and returns its state only while the caller holds its live claim. A result is recorded in the same
+-- transaction, so a reconcile, edit or second report cannot slip in between the check and the write.
+create function post_claim_state(p_job_id bigint, p_client_id uuid, p_claim_token uuid) returns text
+language plpgsql volatile security definer set search_path = public, pg_temp as $$
+declare job_state text;
+begin
+  if not pg_has_role(session_user, 'finledger_worker_post', 'MEMBER') then
+    raise exception 'worker role required for queue post' using errcode='42501';
+  end if;
+  if p_client_id is distinct from public.app_client_id() then
+    raise exception 'tenant context required' using errcode='42501';
+  end if;
+  if p_claim_token is null then return null; end if;
+  select state into job_state from jobs where id=p_job_id and client_id=p_client_id and queue='post'
+    and state in ('running','needs_reconciliation') and claim_token=p_claim_token for update;
+  return job_state;
+end $$;
+
+-- Hands back a claimed post job the agent never sent. Only the live claim may do it.
+create function release_post_job(p_job_id bigint, p_client_id uuid, p_claim_token uuid, p_reason text) returns text
+language plpgsql volatile security definer set search_path = public, pg_temp as $$
+declare job_state text;
+begin
+  if not pg_has_role(session_user, 'finledger_worker_post', 'MEMBER') then
+    raise exception 'worker role required for queue post' using errcode='42501';
+  end if;
+  update jobs set state='queued',claim_token=null,locked_until=null,updated_at=now(),
+    run_after=now()+interval '60 seconds',last_error=left('released: ' || coalesce(p_reason,''), 500)
+    where id=p_job_id and client_id=p_client_id and queue='post' and state='running'
+      and locked_until>=now() and claim_token=p_claim_token
+    returning state into job_state;
+  return job_state;
+end $$;
+
+-- A person's reconcile decision closes a post job that is waiting for them. Tenant-checked; nothing else moves.
+create function reconcile_post_job(p_job_id bigint, p_state text) returns boolean
+language plpgsql volatile security definer set search_path = public, pg_temp as $$
+declare tenant_id uuid := public.app_client_id(); changed int;
+begin
+  if tenant_id is null then
+    raise exception 'tenant context required' using errcode='42501';
+  end if;
+  if p_state not in ('done','dead') then raise exception 'invalid state'; end if;
+  update jobs set state=p_state,claim_token=null,locked_until=null,updated_at=now()
+    where id=p_job_id and client_id=tenant_id and queue='post' and state='needs_reconciliation';
+  get diagnostics changed = row_count;
+  return changed = 1;
+end $$;
+
+revoke all on function post_claim_state(bigint,uuid,uuid), release_post_job(bigint,uuid,uuid,text),
+  reconcile_post_job(bigint,text) from public;
+grant execute on function post_claim_state(bigint,uuid,uuid), release_post_job(bigint,uuid,uuid,text)
+  to finledger_worker_post;
+grant execute on function reconcile_post_job(bigint,text) to finledger_app;
+
+do $$
+declare api_role text;
+begin
+  foreach api_role in array array['anon','authenticated','service_role'] loop
+    if exists (select 1 from pg_roles where rolname = api_role) then
+      execute format('revoke all on function post_claim_state(bigint,uuid,uuid), release_post_job(bigint,uuid,uuid,text), reconcile_post_job(bigint,text) from %I', api_role);
+    end if;
+  end loop;
+end $$;

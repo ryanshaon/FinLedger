@@ -522,27 +522,23 @@ def create_app(settings: Settings, pool, store) -> FastAPI:
         from finledger_control.service import Conflict, ControlService, NotFound  # person3, as score_worker does
 
         with tenant(conn, client_id):
-            job = conn.execute("select id, document_id, state, claim_token from jobs where id = %s and queue = 'post'",
-                               (job_id,)).fetchone()
+            job = conn.execute("select id, document_id from jobs where id = %s and queue = 'post'", (job_id,)).fetchone()
         if not job:
             raise HTTPException(404, "job not found")
-        if job["claim_token"] is not None and job["claim_token"] != body.claim_token:
-            raise HTTPException(409, "this claim is no longer valid")
         service = ControlService(conn)
         try:
+            # The claim is checked and the job settled inside the same transaction that records the result.
             result = service.erp_result(client_id, job["document_id"], ok=body.outcome == "posted", job_id=job_id,
                                         revision=body.revision, idempotency_key=body.idempotency_key,
                                         erp_id=body.erp_id, error=body.error, uncertain=body.outcome == "uncertain",
-                                        request_sha256=body.request_sha256, response_sha256=body.response_sha256)
+                                        request_sha256=body.request_sha256, response_sha256=body.response_sha256,
+                                        claim_token=body.claim_token)
         except NotFound:
             raise HTTPException(404, "job not found") from None
         except Conflict as exc:
             raise HTTPException(409, str(exc)) from None
         if result.get("conflict"):
             raise HTTPException(409, "a different result is already recorded for this job")
-        if job["claim_token"] is not None:
-            target = {"posted": "done", "failed": "dead", "uncertain": "needs_reconciliation"}[body.outcome]
-            conn.execute("select settle_post_job(%s, %s, %s, %s)", (job_id, client_id, body.claim_token, target))
         with tenant(conn, client_id):
             state = conn.execute("select state from jobs where id = %s", (job_id,)).fetchone()["state"]
             attempt = conn.execute("select result from posting_attempts where job_id = %s", (job_id,)).fetchone()["result"]
@@ -552,15 +548,11 @@ def create_app(settings: Settings, pool, store) -> FastAPI:
     def agent_release(job_id: int, body: AgentReleaseIn, client_id: UUID = Depends(agent_dep),
                       conn: psycopg.Connection = Depends(conn_dep)):
         """Hands back a job from which nothing was sent. The agent checks its journal first; the server cannot."""
-        with tenant(conn, client_id):
-            row = conn.execute(
-                """update jobs set state = 'queued', claim_token = null, locked_until = null, updated_at = now(),
-                          run_after = now() + interval '60 seconds', last_error = %s
-                   where id = %s and queue = 'post' and state = 'running' and claim_token = %s returning state""",
-                (f"released: {body.reason}", job_id, body.claim_token)).fetchone()
-        if not row:
+        state = conn.execute("select release_post_job(%s, %s, %s, %s) as state",
+                             (job_id, client_id, body.claim_token, body.reason)).fetchone()["state"]
+        if not state:
             raise HTTPException(409, "this claim is no longer valid")
-        return {"job_state": row["state"]}
+        return {"job_state": state}
 
     @app.post("/agent/masters", status_code=201)
     def agent_masters(body: MastersIn, client_id: UUID = Depends(agent_dep), conn: psycopg.Connection = Depends(conn_dep)):

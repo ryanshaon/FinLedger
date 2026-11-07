@@ -122,10 +122,19 @@ def test_policy_clear_approves_but_never_creates_a_post_job(conn, world, documen
     svc = ControlService(conn)
     assert review(svc, world, document)["route"] == "policy_clear"
     assert svc.post_job_count(cid, document) == 0
-    # a later replay by an approver can't post it either: a policy clearance is not a human approval
-    out = svc.approve(cid, document, world["approver"], post=True, expected_revision=1)
-    assert out["posting_reason"] == PHASE1_REASONS["not_human_approved"]
+    with tenant(conn, cid):  # a policy clearance is recorded, but it is not a human approval
+        kinds = [r["kind"] for r in conn.execute("select kind from approvals where document_id=%s", (document,)).fetchall()]
+    assert kinds == ["policy_clear"]
+    # the maker can't add the human approval; a different approver can, and only then may it post
+    with pytest.raises(Forbidden):
+        svc.approve(cid, document, world["clerk"], post=True, expected_revision=1)
     assert svc.post_job_count(cid, document) == 0
+    out = svc.approve(cid, document, world["approver"], post=True, expected_revision=1)
+    assert "posting_blocked" not in out and svc.post_job_count(cid, document) == 1
+    with tenant(conn, cid):
+        row = conn.execute("select actor_id from approvals where document_id=%s and kind='human' and revision=1",
+                           (document,)).fetchone()
+    assert str(row["actor_id"]) == str(world["approver"])
 
 
 def test_maker_editor_and_payer_cannot_approve(conn, world, document, posting_on):
@@ -382,3 +391,66 @@ def test_a_non_owner_cannot_reconcile(conn, world, document, agent, desk, monkey
     denied = desk.post(f"/api/clients/{cid}/invoices/{document}/reconcile", headers=headers(world["approver_token"]),
                        json={"csrf_token": page["csrf_token"], "decision": "absent", "note": "not in Day Book"})
     assert denied.status_code == 403
+
+
+# ---------- restricted job writes (main's 016) and live-claim rules ----------
+
+def test_a_result_for_an_unclaimed_job_is_refused_and_changes_nothing(conn, world, document, agent):
+    ready_job(conn, world, document)
+    svc = ControlService(conn)
+    job_id = svc.post_job(world["client"]["id"], document)["id"]
+    with tenant(conn, world["client"]["id"]):
+        payload = conn.execute("select payload from jobs where id=%s", (job_id,)).fetchone()["payload"]
+    forged = {"job_id": job_id, "claim_token": "00000000-0000-4000-8000-000000000000", "payload": payload}
+    refused = agent.post(f"/agent/jobs/{job_id}/result", json=result(forged, "posted", erp_id=ERP_ID))
+    assert refused.status_code == 409
+    post = svc.posting_job(world["client"]["id"], document)
+    assert (post["job_state"], post["attempt_result"]) == ("queued", "pending")
+    assert svc.review_detail(world["client"]["id"], document)["status"] == "approved"
+
+
+def test_a_late_report_after_reconcile_cannot_change_the_decision(conn, world, document, agent, owner_dsn):
+    import psycopg
+    ready_job(conn, world, document)
+    job = claim(agent)
+    with psycopg.connect(owner_dsn, autocommit=True) as owner:
+        owner.execute("update jobs set locked_until=now()-interval '1 second' where id=%s", (job["job_id"],))
+    assert agent.post("/agent/jobs/claim", json={}).status_code == 204  # parks it for a person
+    svc = ControlService(conn)
+    cid = world["client"]["id"]
+    out = svc.reconcile_post(cid, document, world["admin"], decision="absent", erp_id=None, note="not in Day Book")
+    assert out["reconcile_decision"] == "absent"
+    late = agent.post(f"/agent/jobs/{job['job_id']}/result", json=result(job, "posted", erp_id=ERP_ID))
+    assert late.status_code == 409
+    post = svc.posting_job(cid, document)
+    assert (post["job_state"], post["reconcile_decision"]) == ("dead", "absent")
+
+
+def test_reconcile_waits_while_the_agent_still_holds_a_live_claim(conn, world, document, agent, owner_dsn):
+    import psycopg
+    ready_job(conn, world, document)
+    job = claim(agent)
+    with psycopg.connect(owner_dsn, autocommit=True) as owner:  # an uncertain attempt whose job is still running
+        owner.execute("update posting_attempts set result='outcome_uncertain' where job_id=%s", (job["job_id"],))
+    with pytest.raises(Conflict, match="still running"):
+        ControlService(conn).reconcile_post(world["client"]["id"], document, world["admin"], decision="absent",
+                                            erp_id=None, note="too early")
+
+
+def test_an_edit_is_refused_while_a_post_waits_for_reconciliation(conn, world, document, agent, owner_dsn):
+    import psycopg
+    ready_job(conn, world, document)
+    job = claim(agent)
+    with psycopg.connect(owner_dsn, autocommit=True) as owner:
+        owner.execute("update jobs set locked_until=now()-interval '1 second' where id=%s", (job["job_id"],))
+    assert agent.post("/agent/jobs/claim", json={}).status_code == 204
+    with pytest.raises(Conflict, match="active post"):
+        ControlService(conn).edit_field(world["client"]["id"], document, world["clerk"], "narration", "x",
+                                        expected_revision=1)
+
+
+def test_the_app_role_cannot_update_jobs_directly(conn, world, document):
+    import psycopg
+    ready_job(conn, world, document)
+    with pytest.raises(psycopg.errors.InsufficientPrivilege), tenant(conn, world["client"]["id"]):
+        conn.execute("update jobs set state='queued' where queue='post'")

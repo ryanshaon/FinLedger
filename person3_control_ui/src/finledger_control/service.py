@@ -156,7 +156,7 @@ class ControlService:
         editors.update(str(row["actor_id"]) for row in rows)
         return frozenset(editors)
 
-    def _open_match(self, client_id, document_id):
+    def _open_match(self, client_id, document_id, *, approving=False):
         """Caller already holds the client transaction."""
         mode = self.conn.execute("select match_mode from clients where id=%s", (client_id,)).fetchone()
         invoice_row = self.conn.execute(
@@ -172,9 +172,11 @@ class ControlService:
         if match["match_mode"] != "three_way" or not posting["blocked"]:
             revision_row = self.conn.execute("select status from documents where id=%s", (document_id,)).fetchone()
             draft_revision = self.conn.execute("select revision from voucher_drafts where document_id=%s", (document_id,)).fetchone()
-            in_review = bool(revision_row and revision_row["status"] == "in_review")
+            # A person approving now counts as the human approval, also for a bill that policy already cleared.
+            approving_now = bool(revision_row and (revision_row["status"] == "in_review"
+                                                   or (approving and revision_row["status"] == "approved")))
             code = self._phase1_block(client_id, document_id, draft_revision["revision"] if draft_revision else 0,
-                                      human_approved=True if in_review else None)
+                                      human_approved=True if approving_now else None)
             posting = {"blocked": code is not None, "reason": PHASE1_REASONS[code] if code else None, "code": code}
         return match, posting
 
@@ -196,7 +198,7 @@ class ControlService:
                 join voucher_drafts v on v.document_id=d.id join canonical_invoices c on c.document_id=d.id
                 where d.id=%s for update of d,v""", (document_id,)).fetchone()
             if not row: raise NotFound("review not found")
-            match, posting = self._open_match(client_id, document_id)
+            match, posting = self._open_match(client_id, document_id, approving=True)
             if match["holds_review"]:
                 raise Conflict(match["review_note"])
             block_post = posting["blocked"]
@@ -206,6 +208,14 @@ class ControlService:
             roles = self._roles(actor_id, client_id)
             if (row["status"] == "approved" and row["revision"] == expected_revision and actor != maker and actor not in editors
                     and roles & {Role.APPROVER, Role.FIRM_ADMIN}):
+                # A bill that policy cleared, or that a person already approved, still needs this person's approval
+                # recorded for this revision before it can post: a policy_clear row never counts as one.
+                added = self.conn.execute("""insert into approvals(client_id,document_id,kind,actor_id,revision)
+                    values(%s,%s,'human',%s,%s) on conflict do nothing returning id""",
+                    (client_id, document_id, actor_id, row["revision"])).fetchone()
+                if added:
+                    self._event(client_id, document_id, "approved", "approved", "human_approval", actor_id,
+                                {"revision": row["revision"]})
                 if enqueue: self._enqueue_post(client_id, document_id, row["revision"])
                 return self._approval_body(row["status"], row["revision"], post=post, block_post=block_post, posting=posting)
             if row["revision"] != expected_revision: raise Conflict(f"revision changed from {expected_revision} to {row['revision']}")
@@ -269,7 +279,10 @@ class ControlService:
             return {"status":new,"revision":row["revision"]}
 
     def erp_result(self, client_id, document_id, *, ok, job_id, revision, idempotency_key, erp_id=None, error=None,
-                   uncertain=False, request_sha256=None, response_sha256=None):
+                   uncertain=False, request_sha256=None, response_sha256=None, claim_token=None):
+        """Records the agent's outcome for a post job. Only the live claim may record a result. Once one is recorded,
+        a repeat changes nothing: an identical one gets the same answer, a different one is logged as a conflict. The job
+        is settled in the same transaction, so a reconcile or edit cannot run between the claim check and the write."""
         if ok and uncertain: raise Conflict("a posting result cannot be both posted and uncertain")
         outcome = "posted" if ok else "outcome_uncertain" if uncertain else "failed"
         with self._tx(client_id):
@@ -279,6 +292,8 @@ class ControlService:
             if not row: raise NotFound("document not found")
             if row["revision"] != revision: raise Conflict("posting callback revision mismatch")
             if row["idempotency_key"] != idempotency_key: raise Conflict("posting callback idempotency key mismatch")
+            live = self.conn.execute("select post_claim_state(%s,%s,%s) as state",
+                                     (job_id, client_id, claim_token)).fetchone()["state"]
             if row["result"] != "pending":
                 body = {"status":"posted" if row["result"] == "posted" else "exception"}
                 if row["result"] != outcome or (ok and row["erp_id"] != erp_id):
@@ -286,6 +301,7 @@ class ControlService:
                                 metadata={"recorded":row["result"],"reported":outcome})
                     body["conflict"] = True
                 return body
+            if not live: raise Conflict("this claim is no longer valid")
             action = Action.POSTED if ok else Action.ERP_FAILED
             try: new = transition(row["status"], action, TransitionContext("person4", set()))
             except InvalidTransition as exc: raise Conflict(str(exc)) from exc
@@ -294,6 +310,10 @@ class ControlService:
                 completed_at=now() where id=%s""", (outcome,erp_id,error,request_sha256,response_sha256,row["id"]))
             action_name = "erp_posted" if ok else "erp_uncertain" if uncertain else "erp_failed"
             self._event(client_id,document_id,row["status"],new,action_name,metadata={"erp_id":erp_id,"error":error})
+            target = "done" if ok else "needs_reconciliation" if uncertain else "dead"
+            if not self.conn.execute("select settle_post_job(%s,%s,%s,%s) as state",
+                                     (job_id, client_id, claim_token, target)).fetchone()["state"]:
+                raise Conflict("this claim is no longer valid")
             if ok and new == "posted":
                 from finledger_platform.client_index import index_posted_document
                 index_posted_document(self.conn, client_id, document_id, erp_id)
@@ -336,7 +356,8 @@ class ControlService:
                 job_state = "dead"
             self.conn.execute("""update posting_attempts set reconcile_decision=%s,reconciled_by=%s,reconciled_at=now(),reconcile_note=%s
                 where id=%s""", (decision, actor_id, note, post["attempt_id"]))
-            self.conn.execute("update jobs set state=%s,claim_token=null,locked_until=null,updated_at=now() where id=%s", (job_state, post["job_id"]))
+            if not self.conn.execute("select reconcile_post_job(%s,%s) as ok", (post["job_id"], job_state)).fetchone()["ok"]:
+                raise Conflict("the post job is still running; wait for its lease to end, then reconcile")
             self.conn.execute("update documents set status=%s,status_reason=%s,updated_at=now() where id=%s",
                               (new, None if decision == "posted" else "reconciled absent; this bill cannot post again in Phase 1", document_id))
             self._event(client_id, document_id, current, new, f"reconcile_{decision}", actor_id, {"erp_id": erp_id, "note": note})
